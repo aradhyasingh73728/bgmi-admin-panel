@@ -9,40 +9,37 @@ import React, {
 import "./TournamentResults.css";
 
 // ============================================================
-// API CONFIGURATION
+// API CONFIG
 // ============================================================
+
 
 const API_BASE = (
   import.meta.env.VITE_TOURNAMENT_API_URL ||
-  "http://localhost:5005"
-).replace(/\/$/, "");
+  (window.location.hostname === "localhost"
+    ? "http://localhost:5005"
+    : "https://create-tournament-server-5005.onrender.com")
+).replace(/\/+$/, "");
 
 // ============================================================
 // HELPERS
 // ============================================================
 
-const getTournamentId = (tournament) =>
-  tournament?.tournament_id ||
-  tournament?.id ||
-  "";
+const getTournamentId = (t) =>
+  t?.tournament_id || t?.id || "";
 
-const getTournamentName = (tournament) =>
-  tournament?.tournament_name ||
-  tournament?.name ||
-  "Unnamed Tournament";
+const getTournamentName = (t) =>
+  t?.tournament_name || t?.name || "Unnamed Tournament";
 
-const getTournamentStatus = (tournament) =>
-  tournament?.tournament_status ||
-  tournament?.status ||
-  "Draft";
+const getTournamentStatus = (t) =>
+  t?.tournament_status || t?.status || "Draft";
 
-const normalizeStatus = (status) =>
-  String(status || "").trim().toLowerCase();
+const normalizeStatus = (value) =>
+  String(value || "").trim().toLowerCase();
 
-const formatStatus = (status) => {
-  if (!status) return "Not Started";
+const formatStatus = (value) => {
+  if (!value) return "Not Started";
 
-  return String(status)
+  return String(value)
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
@@ -51,6 +48,82 @@ const toNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 };
+
+// ============================================================
+// INDIA DATE
+// ============================================================
+
+function getIndiaDate() {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  );
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+// ============================================================
+// RESULTS PAGE FILTER
+// Only today's Live and Completed tournaments
+// ============================================================
+
+const isEligibleForResults = (tournament) => {
+  const today = getIndiaDate();
+
+  const tournamentDate = String(
+    tournament?.date || ""
+  ).slice(0, 10);
+
+  const status = normalizeStatus(
+    getTournamentStatus(tournament)
+  );
+
+  const isToday = tournamentDate === today;
+
+  const isLiveOrCompleted =
+    status === "live" ||
+    status === "completed";
+
+  return isToday && isLiveOrCompleted;
+};
+
+// Supports both tournament type and match type fields.
+const getMatchType = (tournament) => {
+  const value = String(
+    tournament?.match_type ||
+    tournament?.type ||
+    "Classic"
+  ).toLowerCase();
+
+  return value.includes("tdm") ? "TDM" : "Classic";
+};
+
+// BGMI name and profile information can have different
+// field names depending on the registration API.
+const getBgmiName = (player) =>
+  player?.bgmi_name ||
+  player?.player_bgmi_name ||
+  player?.bgmiName ||
+  player?.player_name ||
+  "Unknown Player";
+
+const getBgmiId = (player) =>
+  player?.bgmi_id ||
+  player?.player_bgmi_id ||
+  player?.bgmiId ||
+  "N/A";
+
+const getProfileId = (player) =>
+  player?.profile_id ||
+  player?.user_profile_id ||
+  player?.profileId ||
+  "N/A";
 
 // ============================================================
 // COMPONENT
@@ -110,7 +183,10 @@ const TournamentResults = () => {
       }
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
+        if (
+          response.status === 401 ||
+          response.status === 403
+        ) {
           throw new Error(
             "Admin session expired or unauthorized. Please login again."
           );
@@ -118,8 +194,8 @@ const TournamentResults = () => {
 
         throw new Error(
           data.error ||
-            data.message ||
-            `Request failed with status ${response.status}`
+          data.message ||
+          `Request failed with status ${response.status}`
         );
       }
 
@@ -141,33 +217,39 @@ const TournamentResults = () => {
         "/api/admin/tournaments"
       );
 
-      const tournamentList = Array.isArray(data.tournaments)
+      // Backend se all tournaments receive honge.
+      const allTournaments = Array.isArray(data.tournaments)
         ? data.tournaments
         : [];
 
-      setTournaments(tournamentList);
+      // Results page ke liye sirf today's Live + Completed.
+      const eligibleTournaments = allTournaments.filter(
+        isEligibleForResults
+      );
+
+      setTournaments(eligibleTournaments);
 
       setSelectedTournament((previous) => {
-        if (tournamentList.length === 0) {
+        if (!eligibleTournaments.length) {
           return null;
         }
 
         if (!previous) {
-          return tournamentList[0];
+          return eligibleTournaments[0];
         }
 
         const previousId = getTournamentId(previous);
 
         return (
-          tournamentList.find(
+          eligibleTournaments.find(
             (item) =>
               String(getTournamentId(item)) ===
               String(previousId)
-          ) || tournamentList[0]
+          ) || eligibleTournaments[0]
         );
       });
 
-      return tournamentList;
+      return eligibleTournaments;
     } catch (err) {
       console.error("Tournament loading error:", err);
 
@@ -189,32 +271,24 @@ const TournamentResults = () => {
   }, [fetchTournaments]);
 
   // ==========================================================
-  // LOAD PLAYERS AND SAVED RESULTS
+  // LOAD PLAYERS
   // ==========================================================
 
   const loadPlayersAgain = useCallback(
-    async (tournamentId) => {
-      if (!tournamentId) {
-        return null;
-      }
+    async (id) => {
+      if (!id) return null;
 
-      const data = await apiRequest(
-        `/api/admin/tournaments/${encodeURIComponent(
-          tournamentId
-        )}/players`
+      return await apiRequest(
+        `/api/admin/tournaments/${encodeURIComponent(id)}/players`
       );
-
-      return data;
     },
     [apiRequest]
   );
 
   useEffect(() => {
-    const tournamentId = getTournamentId(
-      selectedTournament
-    );
+    const id = getTournamentId(selectedTournament);
 
-    if (!tournamentId) {
+    if (!id) {
       setPlayers([]);
       setPlayersLoading(false);
       return;
@@ -228,21 +302,21 @@ const TournamentResults = () => {
         setError("");
         setPlayers([]);
 
-        const data = await loadPlayersAgain(tournamentId);
+        const data = await loadPlayersAgain(id);
 
         if (cancelled) return;
 
-        const playerList = Array.isArray(data.players)
-          ? data.players
-          : [];
-
-        setPlayers(playerList);
+        setPlayers(
+          Array.isArray(data.players)
+            ? data.players
+            : []
+        );
 
         if (data.tournament) {
           setSelectedTournament((previous) => {
             if (
               String(getTournamentId(previous)) !==
-              String(tournamentId)
+              String(id)
             ) {
               return previous;
             }
@@ -256,7 +330,6 @@ const TournamentResults = () => {
       } catch (err) {
         if (!cancelled) {
           console.error("Player loading error:", err);
-
           setPlayers([]);
 
           setError(
@@ -282,35 +355,34 @@ const TournamentResults = () => {
   ]);
 
   // ==========================================================
-  // RELOAD CURRENT TOURNAMENT PLAYERS
+  // RELOAD CURRENT PLAYERS
   // ==========================================================
 
   const reloadCurrentPlayers = async () => {
-    const tournamentId = getTournamentId(
-      selectedTournament
-    );
+    const id = getTournamentId(selectedTournament);
 
-    if (!tournamentId) return;
+    if (!id) return;
 
-    const data = await loadPlayersAgain(tournamentId);
+    const data = await loadPlayersAgain(id);
 
-    // Prevent applying data to a different selected tournament.
     if (
       String(getTournamentId(selectedTournament)) !==
-      String(tournamentId)
+      String(id)
     ) {
       return;
     }
 
     setPlayers(
-      Array.isArray(data.players) ? data.players : []
+      Array.isArray(data.players)
+        ? data.players
+        : []
     );
 
     if (data.tournament) {
       setSelectedTournament((previous) => {
         if (
           String(getTournamentId(previous)) !==
-          String(tournamentId)
+          String(id)
         ) {
           return previous;
         }
@@ -324,7 +396,7 @@ const TournamentResults = () => {
   };
 
   // ==========================================================
-  // UPDATE PLAYER INPUT
+  // UPDATE PLAYER
   // ==========================================================
 
   const updatePlayer = (joinId, field, value) => {
@@ -365,20 +437,17 @@ const TournamentResults = () => {
   };
 
   // ==========================================================
-  // SELECTED TOURNAMENT INFORMATION
+  // SELECTED TOURNAMENT
   // ==========================================================
 
-  const tournamentId = getTournamentId(
-    selectedTournament
-  );
+  const tournamentId =
+    getTournamentId(selectedTournament);
 
-  const tournamentName = getTournamentName(
-    selectedTournament
-  );
+  const tournamentName =
+    getTournamentName(selectedTournament);
 
-  const tournamentStatus = getTournamentStatus(
-    selectedTournament
-  );
+  const tournamentStatus =
+    getTournamentStatus(selectedTournament);
 
   const normalizedTournamentStatus =
     normalizeStatus(tournamentStatus);
@@ -389,60 +458,76 @@ const TournamentResults = () => {
   const isCancelled =
     normalizedTournamentStatus === "cancelled";
 
-  const perKill = toNumber(
-    selectedTournament?.per_kill ??
-      selectedTournament?.perKill
-  );
+  const matchType = getMatchType(selectedTournament);
+
+  const isTDM = matchType === "TDM";
+
+  const perKill = isTDM
+    ? 0
+    : toNumber(
+        selectedTournament?.per_kill ??
+        selectedTournament?.perKill
+      );
 
   // ==========================================================
-  // RESULT CALCULATIONS
+  // CALCULATIONS
   // ==========================================================
 
   const totalPlayers = players.length;
 
-  const savedPlayers = useMemo(() => {
-    return players.filter((player) => {
-      const status = normalizeStatus(player.status);
+  const savedPlayers = useMemo(
+    () =>
+      players.filter((player) => {
+        const status = normalizeStatus(player.status);
 
-      return (
-        status !== "" &&
-        status !== "not_saved"
-      );
-    }).length;
-  }, [players]);
+        return (
+          status !== "" &&
+          status !== "not_saved"
+        );
+      }).length,
+    [players]
+  );
 
-  const paidPlayers = useMemo(() => {
-    return players.filter(
-      (player) =>
-        normalizeStatus(player.status) === "paid"
-    ).length;
-  }, [players]);
+  const paidPlayers = useMemo(
+    () =>
+      players.filter(
+        (player) =>
+          normalizeStatus(player.status) === "paid"
+      ).length,
+    [players]
+  );
 
-  const creditedAmount = useMemo(() => {
-    return players.reduce((total, player) => {
-      if (
-        normalizeStatus(player.status) !== "paid"
-      ) {
-        return total;
-      }
+  const creditedAmount = useMemo(
+    () =>
+      players.reduce((total, player) => {
+        if (
+          normalizeStatus(player.status) !== "paid"
+        ) {
+          return total;
+        }
 
-      return (
-        total + toNumber(player.total_winning)
-      );
-    }, 0);
-  }, [players]);
+        return (
+          total + toNumber(player.total_winning)
+        );
+      }, 0),
+    [players]
+  );
 
-  const totalDraftWinning = useMemo(() => {
-    return players.reduce((total, player) => {
-      const kills = toNumber(player.kills);
+  const totalDraftWinning = useMemo(
+    () =>
+      players.reduce((total, player) => {
+        const killAmount = isTDM
+          ? 0
+          : toNumber(player.kills) * perKill;
 
-      const prize = player.is_winner
-        ? toNumber(player.winner_prize)
-        : 0;
+        const winnerPrize = player.is_winner
+          ? toNumber(player.winner_prize)
+          : 0;
 
-      return total + kills * perKill + prize;
-    }, 0);
-  }, [players, perKill]);
+        return total + killAmount + winnerPrize;
+      }, 0),
+    [players, perKill, isTDM]
+  );
 
   const hasPaidResults = paidPlayers > 0;
 
@@ -452,7 +537,7 @@ const TournamentResults = () => {
     hasPaidResults;
 
   // ==========================================================
-  // RESULT VALIDATION
+  // VALIDATION
   // ==========================================================
 
   const validatePlayers = () => {
@@ -463,53 +548,45 @@ const TournamentResults = () => {
     }
 
     for (const player of players) {
-      const playerName =
-        player.player_name || "Unknown Player";
+      const playerName = getBgmiName(player);
 
-      const kills = Number(player.kills);
-      const points = Number(player.points);
+      if (!isTDM) {
+        const kills = Number(player.kills);
+
+        const rank =
+          player.rank_position === "" ||
+          player.rank_position === null ||
+          player.rank_position === undefined
+            ? null
+            : Number(player.rank_position);
+
+        if (
+          !Number.isFinite(kills) ||
+          kills < 0 ||
+          !Number.isInteger(kills)
+        ) {
+          throw new Error(
+            `Invalid kills entered for ${playerName}.`
+          );
+        }
+
+        if (
+          rank !== null &&
+          (
+            !Number.isFinite(rank) ||
+            rank < 1 ||
+            !Number.isInteger(rank)
+          )
+        ) {
+          throw new Error(
+            `Invalid rank entered for ${playerName}.`
+          );
+        }
+      }
+
       const winnerPrize = Number(
         player.winner_prize || 0
       );
-
-      const rank =
-        player.rank_position === "" ||
-        player.rank_position === null ||
-        player.rank_position === undefined
-          ? null
-          : Number(player.rank_position);
-
-      if (
-        !Number.isFinite(kills) ||
-        kills < 0 ||
-        !Number.isInteger(kills)
-      ) {
-        throw new Error(
-          `Invalid kills entered for ${playerName}. Kills must be a non-negative whole number.`
-        );
-      }
-
-      if (
-        !Number.isFinite(points) ||
-        points < 0
-      ) {
-        throw new Error(
-          `Invalid points entered for ${playerName}.`
-        );
-      }
-
-      if (
-        rank !== null &&
-        (
-          !Number.isFinite(rank) ||
-          rank < 1 ||
-          !Number.isInteger(rank)
-        )
-      ) {
-        throw new Error(
-          `Invalid rank entered for ${playerName}. Rank must be a positive whole number.`
-        );
-      }
 
       if (
         player.is_winner &&
@@ -519,14 +596,37 @@ const TournamentResults = () => {
         )
       ) {
         throw new Error(
-          `Invalid winner prize entered for ${playerName}.`
+          `Invalid winning amount for ${playerName}.`
+        );
+      }
+    }
+
+    if (isTDM) {
+      const winners = players.filter(
+        (player) => Boolean(player.is_winner)
+      );
+
+      if (!winners.length) {
+        throw new Error(
+          "Please select at least one TDM winner."
+        );
+      }
+
+      const zeroPrizeWinner = winners.find(
+        (player) =>
+          toNumber(player.winner_prize) <= 0
+      );
+
+      if (zeroPrizeWinner) {
+        throw new Error(
+          `Enter winning amount for ${getBgmiName(zeroPrizeWinner)}.`
         );
       }
     }
   };
 
   // ==========================================================
-  // SAVE RESULT DRAFTS
+  // SAVE RESULTS
   // ==========================================================
 
   const saveResults = async () => {
@@ -553,16 +653,21 @@ const TournamentResults = () => {
         players: players.map((player) => ({
           join_id: player.join_id,
 
-          kills: Number(player.kills || 0),
+          kills: isTDM
+            ? 0
+            : Number(player.kills || 0),
 
-          rank_position:
-            player.rank_position === "" ||
-            player.rank_position === null ||
-            player.rank_position === undefined
-              ? null
-              : Number(player.rank_position),
+          points: toNumber(player.points),
 
-          points: Number(player.points || 0),
+          rank_position: isTDM
+            ? null
+            : (
+                player.rank_position === "" ||
+                player.rank_position === null ||
+                player.rank_position === undefined
+                  ? null
+                  : Number(player.rank_position)
+              ),
 
           is_winner: Boolean(player.is_winner),
 
@@ -599,7 +704,7 @@ const TournamentResults = () => {
   };
 
   // ==========================================================
-  // PUBLISH RESULTS AND CREDIT WALLET
+  // PUBLISH RESULTS
   // ==========================================================
 
   const publishResults = async () => {
@@ -637,8 +742,33 @@ const TournamentResults = () => {
         );
       }
 
+      if (isTDM) {
+        const winners = players.filter(
+          (player) => Boolean(player.is_winner)
+        );
+
+        if (!winners.length) {
+          throw new Error(
+            "Please select the TDM winner before publishing."
+          );
+        }
+
+        const invalidWinner = winners.find(
+          (player) =>
+            toNumber(player.winner_prize) <= 0
+        );
+
+        if (invalidWinner) {
+          throw new Error(
+            `Winning amount is missing for ${getBgmiName(invalidWinner)}.`
+          );
+        }
+      }
+
       const confirmPublish = window.confirm(
-        "Are you sure you want to publish the results and credit winning amounts to player wallets? This action cannot be reversed."
+        isTDM
+          ? "Publish TDM results and credit the selected winner(s)? Please verify the winning players and amounts."
+          : "Publish Classic results and credit winning amounts to player wallets? This action cannot be reversed."
       );
 
       if (!confirmPublish) return;
@@ -664,7 +794,7 @@ const TournamentResults = () => {
 
       const totalAmount = toNumber(
         data.totalAmount ??
-          data.total_amount
+        data.total_amount
       );
 
       setSuccess(
@@ -753,7 +883,7 @@ const TournamentResults = () => {
 
       setSuccess(
         data.message ||
-          "Tournament completion request successful."
+        "Tournament completion request successful."
       );
 
       await fetchTournaments();
@@ -769,7 +899,7 @@ const TournamentResults = () => {
   };
 
   // ==========================================================
-  // REFRESH PAGE
+  // REFRESH
   // ==========================================================
 
   const refreshPage = async () => {
@@ -778,17 +908,17 @@ const TournamentResults = () => {
 
     const currentId = tournamentId;
 
-    const tournamentList = await fetchTournaments();
+    const list = await fetchTournaments();
 
     if (!currentId) return;
 
-    const stillExists = tournamentList.some(
+    const exists = list.some(
       (item) =>
         String(getTournamentId(item)) ===
         String(currentId)
     );
 
-    if (stillExists) {
+    if (exists) {
       try {
         const data = await loadPlayersAgain(currentId);
 
@@ -814,8 +944,6 @@ const TournamentResults = () => {
           });
         }
       } catch (err) {
-        console.error("Refresh players error:", err);
-
         setError(
           err.message || "Unable to refresh player results."
         );
@@ -830,7 +958,7 @@ const TournamentResults = () => {
   return (
     <div className="tr-page">
 
-      {/* PAGE HEADER */}
+      {/* HEADER */}
 
       <div className="tr-header">
         <div>
@@ -843,7 +971,7 @@ const TournamentResults = () => {
           </h1>
 
           <p>
-            Manage match results, player rankings and winning distribution.
+            Manage match results, winners and wallet payouts.
           </p>
         </div>
 
@@ -857,7 +985,7 @@ const TournamentResults = () => {
         </button>
       </div>
 
-      {/* ERROR MESSAGE */}
+      {/* ALERTS */}
 
       {error && (
         <div className="tr-error" role="alert">
@@ -866,14 +994,11 @@ const TournamentResults = () => {
           <button
             type="button"
             onClick={() => setError("")}
-            aria-label="Close error"
           >
             ✕
           </button>
         </div>
       )}
-
-      {/* SUCCESS MESSAGE */}
 
       {success && (
         <div className="tr-success" role="status">
@@ -882,7 +1007,6 @@ const TournamentResults = () => {
           <button
             type="button"
             onClick={() => setSuccess("")}
-            aria-label="Close success message"
           >
             ✕
           </button>
@@ -895,9 +1019,8 @@ const TournamentResults = () => {
         <div className="tr-section-heading">
           <div>
             <h2>Available Tournaments</h2>
-
             <p>
-              Select a tournament to manage its results.
+              Only today's Live and Completed matches are shown.
             </p>
           </div>
 
@@ -913,33 +1036,33 @@ const TournamentResults = () => {
         ) : tournaments.length === 0 ? (
           <div className="tr-empty">
             <div className="tr-empty-icon">🏆</div>
-
-            <h3>No Tournaments Found</h3>
-
+            <h3>No Live Matches Found</h3>
             <p>
-              Create a tournament from Tournament Management first.
+              No Live or Completed tournaments are available for today.
+              Set a tournament to Live from Tournament Management first.
             </p>
           </div>
         ) : (
           <div className="tr-tournament-grid">
             {tournaments.map((tournament) => {
-              const currentId =
-                getTournamentId(tournament);
+              const id = getTournamentId(tournament);
 
-              const isSelected =
-                String(tournamentId) ===
-                String(currentId);
+              const selected =
+                String(tournamentId) === String(id);
 
               const joinedCount =
                 tournament.joinedPlayers ??
                 tournament.registered ??
                 0;
 
+              const tdm =
+                getMatchType(tournament) === "TDM";
+
               return (
                 <div
-                  key={currentId}
+                  key={id}
                   className={`tr-tournament-card ${
-                    isSelected ? "selected" : ""
+                    selected ? "selected" : ""
                   }`}
                   onClick={() => {
                     if (!actionLoading) {
@@ -948,9 +1071,7 @@ const TournamentResults = () => {
                   }}
                 >
                   <div className="tr-card-top">
-                    <span className="tr-card-icon">
-                      🏆
-                    </span>
+                    <span className="tr-card-icon">🏆</span>
 
                     <span className="tr-status">
                       {formatStatus(
@@ -959,20 +1080,15 @@ const TournamentResults = () => {
                     </span>
                   </div>
 
-                  <h3>
-                    {getTournamentName(tournament)}
-                  </h3>
+                  <h3>{getTournamentName(tournament)}</h3>
 
                   <p className="tr-tournament-id">
-                    ID: {currentId}
+                    ID: {id}
                   </p>
 
                   <div className="tr-card-details">
                     <span>
-                      🎮{" "}
-                      {tournament.game_mode ||
-                        tournament.mode ||
-                        "N/A"}
+                      🎮 {tournament.game_mode || tournament.mode || "N/A"}
                     </span>
 
                     <span>
@@ -984,8 +1100,15 @@ const TournamentResults = () => {
                     </span>
 
                     <span>
-                      💰 ₹{toNumber(tournament.prize_pool)}
+                      💰 ₹{toNumber(
+                        tournament.prize_pool ??
+                        tournament.prizePool
+                      )}
                     </span>
+                  </div>
+
+                  <div className="tr-card-type">
+                    {tdm ? "TDM MATCH" : "CLASSIC MATCH"}
                   </div>
 
                   <button
@@ -993,7 +1116,7 @@ const TournamentResults = () => {
                     type="button"
                     disabled={actionLoading}
                   >
-                    {isSelected
+                    {selected
                       ? "SELECTED ✓"
                       : "MANAGE RESULTS →"}
                   </button>
@@ -1004,7 +1127,7 @@ const TournamentResults = () => {
         )}
       </div>
 
-      {/* SELECTED TOURNAMENT DETAILS */}
+      {/* SELECTED TOURNAMENT */}
 
       {selectedTournament && (
         <>
@@ -1012,14 +1135,11 @@ const TournamentResults = () => {
             <div className="tr-section-heading">
               <div>
                 <h2>Selected Tournament</h2>
-
-                <p>
-                  Complete tournament result management.
-                </p>
+                <p>Complete tournament result management.</p>
               </div>
 
               <span className="tr-selected-tag">
-                ACTIVE SELECTION
+                {isTDM ? "TDM RESULT MODE" : "CLASSIC RESULT MODE"}
               </span>
             </div>
 
@@ -1039,51 +1159,45 @@ const TournamentResults = () => {
               <div className="tr-overview-grid">
                 <div>
                   <span>GAME MODE</span>
-
                   <strong>
                     {selectedTournament.game_mode ||
-                      selectedTournament.mode ||
-                      "N/A"}
+                    selectedTournament.mode ||
+                    "N/A"}
                   </strong>
                 </div>
 
                 <div>
                   <span>MATCH TYPE</span>
-
-                  <strong>
-                    {selectedTournament.match_type ||
-                      selectedTournament.type ||
-                      "N/A"}
-                  </strong>
+                  <strong>{matchType}</strong>
                 </div>
 
                 <div>
                   <span>MAP</span>
-
-                  <strong>
-                    {selectedTournament.map || "N/A"}
-                  </strong>
+                  <strong>{selectedTournament.map || "N/A"}</strong>
                 </div>
 
                 <div>
                   <span>ENTRY FEE</span>
-
                   <strong>
-                    ₹{toNumber(selectedTournament.entry_fee)}
+                    ₹{toNumber(
+                      selectedTournament.entry_fee ??
+                      selectedTournament.entryFee
+                    )}
                   </strong>
                 </div>
 
                 <div>
                   <span>PRIZE POOL</span>
-
                   <strong>
-                    ₹{toNumber(selectedTournament.prize_pool)}
+                    ₹{toNumber(
+                      selectedTournament.prize_pool ??
+                      selectedTournament.prizePool
+                    )}
                   </strong>
                 </div>
 
                 <div>
                   <span>DATE & TIME</span>
-
                   <strong>
                     {selectedTournament.date || "N/A"}{" "}
                     {selectedTournament.time || ""}
@@ -1092,18 +1206,16 @@ const TournamentResults = () => {
               </div>
             </div>
 
-            {/* SUMMARY CARDS */}
+            {/* SUMMARY */}
 
             <div className="tr-stats-grid">
               <div className="tr-stat-card">
                 <span>REGISTERED PLAYERS</span>
-
                 <strong>{totalPlayers}</strong>
               </div>
 
               <div className="tr-stat-card">
                 <span>RESULTS SAVED</span>
-
                 <strong>
                   {savedPlayers}/{totalPlayers}
                 </strong>
@@ -1111,7 +1223,6 @@ const TournamentResults = () => {
 
               <div className="tr-stat-card">
                 <span>WINNING CREDITED</span>
-
                 <strong>
                   ₹{creditedAmount.toFixed(2)}
                 </strong>
@@ -1119,7 +1230,6 @@ const TournamentResults = () => {
 
               <div className="tr-stat-card">
                 <span>TOURNAMENT STATUS</span>
-
                 <strong className="tr-stat-status">
                   {formatStatus(tournamentStatus)}
                 </strong>
@@ -1135,7 +1245,9 @@ const TournamentResults = () => {
                 <h2>Player Results</h2>
 
                 <p>
-                  Enter player kills, rank, points and winning amount.
+                  {isTDM
+                    ? "Select the winning player or winning team members and enter their winning amount."
+                    : "Enter kills, rank and winner prize for each player."}
                 </p>
               </div>
 
@@ -1151,9 +1263,7 @@ const TournamentResults = () => {
             ) : players.length === 0 ? (
               <div className="tr-empty">
                 <div className="tr-empty-icon">👥</div>
-
                 <h3>No Registered Players</h3>
-
                 <p>
                   This tournament does not have any registered players yet.
                 </p>
@@ -1164,23 +1274,40 @@ const TournamentResults = () => {
                   <table className="tr-results-table">
                     <thead>
                       <tr>
-                        <th>PLAYER</th>
+                        <th>PLAYER / BGMI NAME</th>
                         <th>BGMI ID</th>
-                        <th>KILLS</th>
-                        <th>RANK</th>
-                        <th>POINTS</th>
+                        <th>PROFILE ID</th>
+
+                        {!isTDM && (
+                          <>
+                            <th>KILLS</th>
+                            <th>RANK</th>
+                          </>
+                        )}
+
                         <th>WINNER</th>
-                        <th>WINNER PRIZE</th>
-                        <th>KILL AMOUNT</th>
-                        <th>TOTAL WINNING</th>
+                        <th>WINNING AMOUNT</th>
+
+                        {!isTDM && (
+                          <>
+                            <th>KILL AMOUNT</th>
+                            <th>TOTAL WINNING</th>
+                          </>
+                        )}
+
+                        {isTDM && (
+                          <th>TOTAL WINNING</th>
+                        )}
+
                         <th>PAYMENT</th>
                       </tr>
                     </thead>
 
                     <tbody>
                       {players.map((player) => {
-                        const killAmount =
-                          toNumber(player.kills) * perKill;
+                        const killAmount = isTDM
+                          ? 0
+                          : toNumber(player.kills) * perKill;
 
                         const winnerPrize =
                           player.is_winner
@@ -1191,8 +1318,7 @@ const TournamentResults = () => {
                           killAmount + winnerPrize;
 
                         const isPaid =
-                          normalizeStatus(player.status) ===
-                          "paid";
+                          normalizeStatus(player.status) === "paid";
 
                         const isLocked =
                           editingLocked || isPaid;
@@ -1200,96 +1326,95 @@ const TournamentResults = () => {
                         return (
                           <tr key={player.join_id}>
                             <td>
-                              <strong>
-                                {player.player_name ||
-                                  "Unknown Player"}
+                              <strong className="tr-player-name">
+                                {getBgmiName(player)}
                               </strong>
 
-                              <small>
-                                {player.profile_name || ""}
+                              <small className="tr-player-real-name">
+                                Registration: {player.player_name || "N/A"}
                               </small>
                             </td>
 
                             <td>
-                              {player.bgmi_id || "N/A"}
+                              <span className="tr-id-value">
+                                {getBgmiId(player)}
+                              </span>
+                            </td>
+
+                            <td>
+                              <span className="tr-id-value">
+                                {getProfileId(player)}
+                              </span>
+                            </td>
+
+                            {!isTDM && (
+                              <>
+                                <td>
+                                  <input
+                                    className="tr-result-input"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={player.kills ?? 0}
+                                    disabled={isLocked}
+                                    onChange={(event) =>
+                                      updatePlayer(
+                                        player.join_id,
+                                        "kills",
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+                                </td>
+
+                                <td>
+                                  <input
+                                    className="tr-result-input"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    placeholder="-"
+                                    value={
+                                      player.rank_position ?? ""
+                                    }
+                                    disabled={isLocked}
+                                    onChange={(event) =>
+                                      updatePlayer(
+                                        player.join_id,
+                                        "rank_position",
+                                        event.target.value
+                                      )
+                                    }
+                                  />
+                                </td>
+                              </>
+                            )}
+
+                            <td>
+                              <label className="tr-winner-check">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(player.is_winner)}
+                                  disabled={isLocked}
+                                  onChange={(event) =>
+                                    toggleWinner(
+                                      player.join_id,
+                                      event.target.checked
+                                    )
+                                  }
+                                />
+
+                                <span>
+                                  {player.is_winner
+                                    ? "WINNER"
+                                    : "SELECT"}
+                                </span>
+                              </label>
                             </td>
 
                             <td>
                               <input
-                                className="tr-result-input"
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={player.kills ?? 0}
-                                disabled={isLocked}
-                                onChange={(event) =>
-                                  updatePlayer(
-                                    player.join_id,
-                                    "kills",
-                                    event.target.value
-                                  )
-                                }
-                              />
-                            </td>
-
-                            <td>
-                              <input
-                                className="tr-result-input"
-                                type="number"
-                                min="1"
-                                step="1"
-                                placeholder="-"
-                                value={
-                                  player.rank_position ?? ""
-                                }
-                                disabled={isLocked}
-                                onChange={(event) =>
-                                  updatePlayer(
-                                    player.join_id,
-                                    "rank_position",
-                                    event.target.value
-                                  )
-                                }
-                              />
-                            </td>
-
-                            <td>
-                              <input
-                                className="tr-result-input"
-                                type="number"
-                                min="0"
-                                step="0.5"
-                                value={player.points ?? 0}
-                                disabled={isLocked}
-                                onChange={(event) =>
-                                  updatePlayer(
-                                    player.join_id,
-                                    "points",
-                                    event.target.value
-                                  )
-                                }
-                              />
-                            </td>
-
-                            <td>
-                              <input
-                                type="checkbox"
-                                checked={Boolean(
-                                  player.is_winner
-                                )}
-                                disabled={isLocked}
-                                onChange={(event) =>
-                                  toggleWinner(
-                                    player.join_id,
-                                    event.target.checked
-                                  )
-                                }
-                              />
-                            </td>
-
-                            <td>
-                              <input
-                                className="tr-result-input"
+                                className="tr-result-input tr-prize-input"
                                 type="number"
                                 min="0"
                                 step="0.01"
@@ -1312,15 +1437,27 @@ const TournamentResults = () => {
                               />
                             </td>
 
-                            <td>
-                              ₹{killAmount.toFixed(2)}
-                            </td>
+                            {!isTDM && (
+                              <>
+                                <td>
+                                  ₹{killAmount.toFixed(2)}
+                                </td>
 
-                            <td>
-                              <strong>
-                                ₹{totalWinning.toFixed(2)}
-                              </strong>
-                            </td>
+                                <td>
+                                  <strong>
+                                    ₹{totalWinning.toFixed(2)}
+                                  </strong>
+                                </td>
+                              </>
+                            )}
+
+                            {isTDM && (
+                              <td>
+                                <strong>
+                                  ₹{totalWinning.toFixed(2)}
+                                </strong>
+                              </td>
+                            )}
 
                             <td>
                               <span
@@ -1338,24 +1475,43 @@ const TournamentResults = () => {
                   </table>
                 </div>
 
-                {/* WINNING CALCULATION */}
+                {/* WINNING SUMMARY */}
 
                 <div className="tr-winning-placeholder">
-                  <div className="tr-winning-icon">
-                    💰
-                  </div>
+                  <div className="tr-winning-icon">💰</div>
 
                   <div>
-                    <h3>Winning Calculation</h3>
+                    <h3>
+                      {isTDM
+                        ? "TDM Winner Calculation"
+                        : "Classic Winning Calculation"}
+                    </h3>
 
                     <p>
-                      Per kill: ₹{perKill.toFixed(2)}
-                      {" | "}
-                      Total estimated winning: ₹
-                      {totalDraftWinning.toFixed(2)}
-                      {" | "}
-                      Already credited: ₹
-                      {creditedAmount.toFixed(2)}
+                      {isTDM ? (
+                        <>
+                          Selected winners:{" "}
+                          {players.filter(
+                            (player) => player.is_winner
+                          ).length}
+                          {" | "}
+                          Total winning: ₹
+                          {totalDraftWinning.toFixed(2)}
+                          {" | "}
+                          Already credited: ₹
+                          {creditedAmount.toFixed(2)}
+                        </>
+                      ) : (
+                        <>
+                          Per kill: ₹{perKill.toFixed(2)}
+                          {" | "}
+                          Total estimated winning: ₹
+                          {totalDraftWinning.toFixed(2)}
+                          {" | "}
+                          Already credited: ₹
+                          {creditedAmount.toFixed(2)}
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -1369,10 +1525,7 @@ const TournamentResults = () => {
             <div className="tr-section-heading">
               <div>
                 <h2>Final Actions</h2>
-
-                <p>
-                  Save, publish and complete this tournament.
-                </p>
+                <p>Save, publish and complete this tournament.</p>
               </div>
             </div>
 

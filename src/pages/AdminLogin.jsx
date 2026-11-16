@@ -7,10 +7,8 @@ import "./AdminLogin.css";
 /* ===============================
    API BASE - AUTO DETECT
 ================================ */
-const API_URL =
-  window.location.hostname === "localhost"
-    ? "http://localhost:5000"
-    : "https://admin-login-server.onrender.com";
+const API_URL = "https://admin-login-server-5000.onrender.com";
+
 
 const AdminLogin = () => {
   const [adminId, setAdminId] = useState("");

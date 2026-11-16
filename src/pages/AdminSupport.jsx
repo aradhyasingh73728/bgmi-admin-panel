@@ -1,3 +1,4 @@
+
 import {
   useEffect,
   useState,
@@ -8,7 +9,7 @@ import {
 import "./AdminSupport.css";
 
 // ======================================================
-// API CONFIGURATION (Port 5006 Support Server)
+// API CONFIGURATION
 // ======================================================
 
 const isLocalhost =
@@ -19,8 +20,79 @@ const isLocalhost =
 const API_BASE = (
   isLocalhost
     ? "http://localhost:5006"
-    : import.meta.env.VITE_SUPPORT_API_URL || "https://your-production-support-server.onrender.com"
+    : import.meta.env.VITE_SUPPORT_API_URL ||
+      "https://c-support-server-5006.onrender.com"
 ).replace(/\/$/, "");
+
+// Player frontend URL
+const USER_APP_URL = (
+  import.meta.env.VITE_USER_APP_URL ||
+  (isLocalhost ? "http://localhost:3001" : "")
+).replace(/\/$/, "");
+
+// ======================================================
+// AVATAR HELPERS
+// ======================================================
+
+const getInitial = (name) =>
+  String(name || "U").trim().charAt(0).toUpperCase() || "U";
+
+const getUserAvatar = (chat) => {
+  const avatar =
+    chat?.profile?.avatar ||
+    chat?.user?.avatar ||
+    chat?.avatar ||
+    chat?.player_avatar ||
+    "";
+
+  if (!avatar || typeof avatar !== "string") {
+    return "";
+  }
+
+  // Supabase Storage URL, HTTP URL, data URL, blob URL
+  if (/^(https?:\/\/|data:|blob:)/i.test(avatar)) {
+    return avatar;
+  }
+
+  // Player frontend relative avatar path
+  if (avatar.startsWith("/")) {
+    if (!USER_APP_URL) {
+      return "";
+    }
+
+    return `${USER_APP_URL}${avatar}`;
+  }
+
+  return avatar;
+};
+
+// ======================================================
+// USER AVATAR COMPONENT
+// ======================================================
+
+const UserAvatar = ({ chat, name }) => {
+  const avatarUrl = getUserAvatar(chat);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatarUrl]);
+
+  return (
+    <div className="admin-user-avatar">
+      {avatarUrl && !imageFailed ? (
+        <img
+          src={avatarUrl}
+          alt={`${name || "Player"} profile`}
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        getInitial(name)
+      )}
+    </div>
+  );
+};
 
 // ======================================================
 // ADMIN SUPPORT COMPONENT
@@ -118,7 +190,7 @@ const AdminSupport = () => {
 
       setChats(chatList);
 
-      // Keep selected chat updated with latest information.
+      // Update selected chat information
       setActiveChat((previous) => {
         if (!previous) return previous;
 
@@ -341,9 +413,6 @@ const AdminSupport = () => {
     chat?.email ||
     "";
 
-  const getInitial = (name) =>
-    String(name || "U").trim().charAt(0).toUpperCase() || "U";
-
   const formatTime = (value) => {
     if (!value) return "";
 
@@ -518,9 +587,12 @@ const AdminSupport = () => {
                       }`}
                       onClick={() => selectChat(chat)}
                     >
-                      <div className="admin-user-avatar">
-                        {getInitial(userName)}
-                      </div>
+                      {/* PLAYER PROFILE PICTURE */}
+
+                      <UserAvatar
+                        chat={chat}
+                        name={userName}
+                      />
 
                       <div className="admin-user-info">
                         <p className="admin-user-name">
@@ -570,13 +642,19 @@ const AdminSupport = () => {
 
                 <div className="admin-chat-header">
                   <div className="admin-chat-user-info">
-                    <div className="admin-user-avatar">
-                      {getInitial(getUserName(activeChat))}
-                    </div>
+
+                    {/* SELECTED PLAYER PROFILE PICTURE */}
+
+                    <UserAvatar
+                      chat={activeChat}
+                      name={getUserName(activeChat)}
+                    />
 
                     <div>
                       <h3>{getUserName(activeChat)}</h3>
-                      <p>{getUserEmail(activeChat) || "Player Support Chat"}</p>
+                      <p>
+                        {getUserEmail(activeChat) || "Player Support Chat"}
+                      </p>
                     </div>
                   </div>
 

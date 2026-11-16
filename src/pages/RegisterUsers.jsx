@@ -5,13 +5,13 @@ import axios from "axios";
 const API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5001"
-    : "https://user-register-server.onrender.com";
+    : "https://user-register-server-5001.onrender.com";
 
 // 🔥 DEPOSIT SERVER (5002) - DepositUser table  
 const DEPOSIT_API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5002"
-    : "https://deposit-and-join-tournament-server.onrender.com";
+    : "https://deposit-and-join-tournament-server-5002.onrender.com";
 
 const RegisterUsers = () => {
   const [users, setUsers] = useState([]);

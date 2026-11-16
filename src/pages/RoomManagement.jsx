@@ -1,16 +1,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+
 const ADMIN_API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5004"
-    : "https://dashboard-server-tera.onrender.com";
+    : "https://bgmi-admin-dashboard-server-5004.onrender.com";
 
 const TOURNAMENT_API_BASE = (
   window.location.hostname === "localhost"
     ? "http://localhost:5005"
-    : process.env.REACT_APP_TOURNAMENT_API_URL || ""
+    : "https://create-tournament-server-5005.onrender.com"
 ).replace(/\/+$/, "");
+
 
 // ============================================================
 // HELPERS

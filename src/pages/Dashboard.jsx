@@ -10,7 +10,7 @@ import "./Dashboard.css";
 const API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5004"
-    : "https://dashboard-server-tera.onrender.com";
+    : "https://bgmi-admin-dashboard-server-5004.onrender.com";
 
 // ============================================================
 // HELPERS
