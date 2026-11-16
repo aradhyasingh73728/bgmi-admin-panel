@@ -301,8 +301,9 @@ const TournamentManagement = () => {
   // ACTIVE SECTION + FILTERS
   // ==================================================
 
-  const sectionTournaments =
-    classifiedTournaments[activeSection] || [];
+  const sectionTournaments = useMemo(() => {
+  return classifiedTournaments[activeSection] || [];
+}, [classifiedTournaments, activeSection]);
 
   const filteredTournaments = useMemo(() => {
     const searchText = search.trim().toLowerCase();

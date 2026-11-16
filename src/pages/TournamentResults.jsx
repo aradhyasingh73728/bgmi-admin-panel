@@ -285,8 +285,11 @@ const TournamentResults = () => {
     [apiRequest]
   );
 
+  const selectedTournamentId =
+  getTournamentId(selectedTournament);
+
   useEffect(() => {
-    const id = getTournamentId(selectedTournament);
+  const id = selectedTournamentId;
 
     if (!id) {
       setPlayers([]);
@@ -348,11 +351,10 @@ const TournamentResults = () => {
     return () => {
       cancelled = true;
     };
-  }, [
-    selectedTournament?.tournament_id,
-    selectedTournament?.id,
-    loadPlayersAgain,
-  ]);
+}, [
+  selectedTournamentId,
+  loadPlayersAgain,
+]);
 
   // ==========================================================
   // RELOAD CURRENT PLAYERS
