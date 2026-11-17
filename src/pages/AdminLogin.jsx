@@ -1,14 +1,18 @@
-// src/pages/AdminLogin.jsx
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./AdminLogin.css";
 
 /* ===============================
-   API BASE - AUTO DETECT
+   API BASE - LOCAL + LIVE
 ================================ */
-const API_URL = "https://admin-login-server-5000.onrender.com";
 
+const API_URL =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://admin-login-server-5000.onrender.com";
 
 const AdminLogin = () => {
   const [adminId, setAdminId] = useState("");
@@ -21,6 +25,7 @@ const AdminLogin = () => {
   /* ===============================
      LOGIN HANDLER
   ================================ */
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -29,8 +34,15 @@ const AdminLogin = () => {
     try {
       const res = await axios.post(
         `${API_URL}/admin/login`,
-        { id: adminId.trim(), password: password.trim() },
-        { headers: { "Content-Type": "application/json" } }
+        {
+          id: adminId.trim(),
+          password: password.trim(),
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
       );
 
       if (res.data?.success) {
@@ -38,26 +50,31 @@ const AdminLogin = () => {
         localStorage.setItem("adminToken", res.data.token);
 
         const verify = await axios.get(`${API_URL}/admin/verify`, {
-          headers: { Authorization: `Bearer ${res.data.token}` },
+          headers: {
+            Authorization: `Bearer ${res.data.token}`,
+          },
         });
 
         if (verify.data?.success) {
           navigate("/", { replace: true });
           return;
-        } else {
-          setError("Token verification failed. Try login again.");
-          localStorage.removeItem("adminToken");
-          localStorage.removeItem("bgmi_admin_logged_in");
         }
+
+        setError("Token verification failed. Try login again.");
+
+        localStorage.removeItem("adminToken");
+        localStorage.removeItem("bgmi_admin_logged_in");
       } else {
         setError("Invalid admin credentials");
       }
     } catch (err) {
       console.error("Login error:", err.response || err.message);
+
       setError(
         err.response?.data?.message ||
           "Admin login failed. Check ID & Password."
       );
+
       localStorage.removeItem("adminToken");
       localStorage.removeItem("bgmi_admin_logged_in");
     } finally {
@@ -71,9 +88,16 @@ const AdminLogin = () => {
         <div className="auth-card hacker-card">
           <div className="auth-header">
             <span className="auth-badge">ADMIN ACCESS</span>
+
             <h2 className="page-title">Free Fire Admin Login</h2>
-            <p className="page-subtitle">Authorized access only</p>
-            <small className="api-text">API: {API_URL}</small>
+
+            <p className="page-subtitle">
+              Authorized access only
+            </p>
+
+            <small className="api-text">
+              API: {API_URL}
+            </small>
           </div>
 
           {error && (
@@ -85,6 +109,7 @@ const AdminLogin = () => {
           <form className="auth-form" onSubmit={handleSubmit}>
             <label className="form-label" htmlFor="adminId">
               <span>Admin ID</span>
+
               <input
                 id="adminId"
                 type="text"
@@ -99,6 +124,7 @@ const AdminLogin = () => {
 
             <label className="form-label" htmlFor="password">
               <span>Password</span>
+
               <input
                 id="password"
                 type="password"

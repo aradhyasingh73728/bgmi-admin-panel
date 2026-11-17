@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import axios from "axios";
 
@@ -7,11 +8,29 @@ const API_BASE =
     ? "http://localhost:5001"
     : "https://user-register-server-5001.onrender.com";
 
-// 🔥 DEPOSIT SERVER (5002) - DepositUser table  
+// 🔥 DEPOSIT SERVER (5002) - DepositUser table
 const DEPOSIT_API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5002"
     : "https://deposit-and-join-tournament-server-5002.onrender.com";
+
+// ==========================================
+// ADMIN JWT AUTH CONFIG (PORT 5001 ONLY)
+// ==========================================
+
+const getAdminAuthConfig = () => {
+  const token = localStorage.getItem("adminToken");
+
+  if (!token) {
+    throw new Error("Admin token missing. Please login again.");
+  }
+
+  return {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  };
+};
 
 const RegisterUsers = () => {
   const [users, setUsers] = useState([]);
@@ -21,12 +40,22 @@ const RegisterUsers = () => {
   /* ===============================
     LOAD USERS FROM SERVER (5001)
   =============================== */
+
   const loadUsers = async () => {
     try {
       setLoading(true);
       setError("");
-      console.log("🔍 Loading BGMI users from 5001:", `${API_BASE}/api/admin/users`);
-      const res = await axios.get(`${API_BASE}/api/admin/users`);
+
+      console.log(
+        "🔍 Loading BGMI users from 5001:",
+        `${API_BASE}/api/admin/users`
+      );
+
+      const res = await axios.get(
+        `${API_BASE}/api/admin/users`,
+        getAdminAuthConfig()
+      );
+
       console.log("🔍 API Response:", res.data);
 
       if (!res.data?.users?.length) {
@@ -50,11 +79,22 @@ const RegisterUsers = () => {
       }));
 
       setUsers(list);
+
       console.log("✅ ADMIN USERS LOADED:", list.length, "users");
     } catch (err) {
-      console.error("❌ Load users error:", err.response?.data || err.message);
+      console.error(
+        "❌ Load users error:",
+        err.response?.data || err.message
+      );
+
       setError(
-        `Failed to load users: ${err.response?.statusText || "Server not reachable"}`
+        `Failed to load users: ${
+          err.response?.data?.message ||
+          err.response?.data?.error ||
+          err.response?.statusText ||
+          err.message ||
+          "Server not reachable"
+        }`
       );
     } finally {
       setLoading(false);
@@ -62,49 +102,97 @@ const RegisterUsers = () => {
   };
 
   /* ===============================
-    🔥 CLEAR APPROVED DEPOSITS (5002 SERVER - WALLET SAFE!)
+    CLEAR APPROVED DEPOSITS
+    PORT 5002 - WALLET SAFE!
   =============================== */
+
   const clearApprovedHistory = async (profileId) => {
     // eslint-disable-next-line no-restricted-globals
-    if (!confirm(`Clear APPROVED deposits for ${profileId}?\n\n✅ Wallet balance SAME rahega!\n💰 Sirf DepositUser history saaf hogi`)) return;
+    if (
+  !window.confirm(
+    `Clear APPROVED deposits for ${profileId}?\n\n✅ Wallet balance SAME rahega!\n💰 Sirf DepositUser history saaf hogi`
+  )
+) {
+  return;
+}
 
     try {
       console.log("🧹 Clearing approved history for:", profileId);
-      console.log("📡 Calling DEPOSIT SERVER (5002):", `${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`);
-      
-      const res = await axios.delete(`${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`);
-      
+
+      console.log(
+        "📡 Calling DEPOSIT SERVER (5002):",
+        `${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`
+      );
+
+      // IMPORTANT:
+      // Existing Port 5002 request intentionally unchanged.
+      // Wallet balance safe rahega.
+      const res = await axios.delete(
+        `${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`
+      );
+
       console.log("✅ DEPOSIT SERVER RESPONSE:", res.data);
-      
+
       if (res.data.success) {
         // eslint-disable-next-line no-restricted-globals
-        alert(`✅ ${res.data.cleared || 0} approved deposits cleared!\n💰 Wallet balance safe!`);
-        loadUsers(); // Refresh user list
+        alert(
+          `✅ ${res.data.cleared || 0} approved deposits cleared!\n💰 Wallet balance safe!`
+        );
+
+        loadUsers();
       } else {
         // eslint-disable-next-line no-restricted-globals
         alert("❌ Server returned error response");
       }
     } catch (err) {
-      console.error("❌ Clear history error:", err.response?.status, err.response?.data || err.message);
+      console.error(
+        "❌ Clear history error:",
+        err.response?.status,
+        err.response?.data || err.message
+      );
+
       // eslint-disable-next-line no-restricted-globals
-      alert(`❌ Failed to clear history\nStatus: ${err.response?.status || 'Unknown'}`);
+      alert(
+        `❌ Failed to clear history\nStatus: ${
+          err.response?.status || "Unknown"
+        }`
+      );
     }
   };
 
   /* ===============================
     DELETE USER (5001 SERVER)
   =============================== */
+
   const handleDelete = async (id) => {
     // eslint-disable-next-line no-restricted-globals
-    if (!confirm("Delete this BGMI player permanently?")) return;
+    if (!window.confirm("Delete this BGMI player permanently?")) {
+      return;
+    }
 
     try {
-      await axios.delete(`${API_BASE}/api/admin/users/${id}`);
-      loadUsers();
+      await axios.delete(
+        `${API_BASE}/api/admin/users/${id}`,
+        getAdminAuthConfig()
+      );
+
+      await loadUsers();
+
       console.log("🗑️ User deleted:", id);
     } catch (err) {
-      console.error("Delete error:", err);
-      setError("Delete failed - try again");
+      console.error(
+        "Delete error:",
+        err.response?.data || err.message
+      );
+
+      setError(
+        `Delete failed: ${
+          err.response?.data?.message ||
+          err.response?.data?.error ||
+          err.message ||
+          "Please try again"
+        }`
+      );
     }
   };
 
@@ -115,8 +203,14 @@ const RegisterUsers = () => {
   return (
     <div className="page">
       <div className="page-header">
-        <h2 className="page-title">👥 FREE FIRE – Registered Players</h2>
-        <p className="page-subtitle">Admin View - {users.length} Players Total</p>
+        <h2 className="page-title">
+          👥 BGMI ESPORTS – Registered Players
+        </h2>
+
+        <p className="page-subtitle">
+          Admin View - {users.length} Players Total
+        </p>
+
         <button
           onClick={loadUsers}
           className="btn-refresh"
@@ -160,7 +254,7 @@ const RegisterUsers = () => {
             textAlign: "center",
           }}
         >
-          ⏳ Loading registered FREE FIRE players...
+          ⏳ Loading registered BGMI ESPORTS players...
         </div>
       )}
 
@@ -179,29 +273,37 @@ const RegisterUsers = () => {
               <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
                 #
               </th>
+
               <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
                 Profile ID
               </th>
+
               <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
                 Name
               </th>
+
               <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
                 Email
               </th>
+
               <th style={{ padding: "12px 8px", textAlign: "center", fontWeight: "600" }}>
                 Password
               </th>
+
               <th style={{ padding: "12px 8px", textAlign: "center", fontWeight: "600" }}>
                 Balance
               </th>
+
               <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
                 Register Time
               </th>
+
               <th style={{ padding: "12px 8px", textAlign: "center", fontWeight: "600" }}>
                 Actions
               </th>
             </tr>
           </thead>
+
           <tbody>
             {users.map((u) => (
               <tr
@@ -210,7 +312,10 @@ const RegisterUsers = () => {
                   borderBottom: "1px solid #e2e8f0",
                 }}
               >
-                <td style={{ padding: "12px 8px", fontWeight: "500" }}>{u.index}</td>
+                <td style={{ padding: "12px 8px", fontWeight: "500" }}>
+                  {u.index}
+                </td>
+
                 <td style={{ padding: "12px 8px" }}>
                   <strong
                     style={{
@@ -224,15 +329,28 @@ const RegisterUsers = () => {
                     {u.profileId}
                   </strong>
                 </td>
-                <td style={{ padding: "12px 8px", fontWeight: "600" }}>{u.name}</td>
-                <td style={{ padding: "12px 8px" }}>
-                  <small style={{ color: "#666" }}>{u.email}</small>
+
+                <td style={{ padding: "12px 8px", fontWeight: "600" }}>
+                  {u.name}
                 </td>
+
+                <td style={{ padding: "12px 8px" }}>
+                  <small style={{ color: "#666" }}>
+                    {u.email}
+                  </small>
+                </td>
+
                 <td style={{ padding: "12px 8px", textAlign: "center" }}>
-                  <small style={{ color: "#000", fontFamily: "monospace" }}>
+                  <small
+                    style={{
+                      color: "#000",
+                      fontFamily: "monospace",
+                    }}
+                  >
                     {u.userPassword}
                   </small>
                 </td>
+
                 <td
                   style={{
                     padding: "12px 8px",
@@ -243,6 +361,7 @@ const RegisterUsers = () => {
                 >
                   ₹{u.balance.toLocaleString()}
                 </td>
+
                 <td style={{ padding: "12px 8px" }}>
                   <small style={{ color: "#666" }}>
                     {u.createdAt.toLocaleString("en-IN", {
@@ -255,8 +374,10 @@ const RegisterUsers = () => {
                     })}
                   </small>
                 </td>
+
                 <td style={{ padding: "12px 8px", textAlign: "center" }}>
-                  {/* 🔥 NEW BUTTON - CLEAR APPROVED HISTORY (5002 SERVER) */}
+                  {/* CLEAR APPROVED HISTORY - PORT 5002 */}
+
                   <button
                     onClick={() => clearApprovedHistory(u.profileId)}
                     style={{
@@ -292,6 +413,7 @@ const RegisterUsers = () => {
                   >
                     ✏️ Edit
                   </button>
+
                   <button
                     className="btn-danger"
                     onClick={() => handleDelete(u.id)}
@@ -322,8 +444,9 @@ const RegisterUsers = () => {
                   }}
                 >
                   <div>
-                    👥 No FREE FIRE players registered yet
+                    👥 No BGMI players registered yet
                     <br />
+
                     <small style={{ fontSize: "14px" }}>
                       Players will appear here after registration from frontend
                     </small>

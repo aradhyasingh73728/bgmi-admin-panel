@@ -17,6 +17,16 @@ const Sidebar = () => {
           👤 Register Users
         </NavLink>
 
+        {/* SECURITY MANAGEMENT */}
+        <NavLink to="/security-management" className="nav-item">
+          🛡️ Security Management
+        </NavLink>
+
+        {/* ADMIN SESSION MANAGEMENT */}
+        <NavLink to="/admin-sessions" className="nav-item">
+          💻 Admin Sessions
+        </NavLink>
+
         {/* TOURNAMENT MANAGEMENT */}
         <NavLink to="/tournament-management" className="nav-item">
           🏆 Tournament Management

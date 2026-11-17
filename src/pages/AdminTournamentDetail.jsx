@@ -21,6 +21,19 @@ const ADMIN_API_BASE =
     : "https://bgmi-admin-dashboard-server-5004.onrender.com";
 
 // ============================================================
+// ADMIN JWT AUTH CONFIG
+// ============================================================
+const getAdminAuthConfig = () => {
+  const token = localStorage.getItem("adminToken");
+
+  return {
+    headers: {
+      Authorization: token ? `Bearer ${token}` : "",
+    },
+  };
+};
+
+// ============================================================
 // HELPERS
 // ============================================================
 const currency = (value) =>
@@ -163,8 +176,9 @@ const AdminTournamentDetail = () => {
             id
           )}`,
           {
-            timeout: 10000,
-          }
+  ...getAdminAuthConfig(),
+  timeout: 10000,
+}
         );
 
         const data = response.data || {};
@@ -620,18 +634,19 @@ const AdminTournamentDetail = () => {
         return;
       }
 
-      const response =
-        await axios.put(
-          `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
-            id
-          )}/${endpoint}`,
-          {
-            userId,
-          },
-          {
-            timeout: 10000,
-          }
-        );
+     const response =
+  await axios.put(
+    `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
+      id
+    )}/${endpoint}`,
+    {
+      userId,
+    },
+    {
+      ...getAdminAuthConfig(),
+      timeout: 10000,
+    }
+  );
 
       const updatedJoin =
         response.data?.join;
@@ -700,16 +715,17 @@ const AdminTournamentDetail = () => {
 
     try {
       await axios.delete(
-        `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
-          id
-        )}`,
-        {
-          data: {
-            userId,
-          },
-          timeout: 10000,
-        }
-      );
+  `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
+    id
+  )}`,
+  {
+    ...getAdminAuthConfig(),
+    data: {
+      userId,
+    },
+    timeout: 10000,
+  }
+);
 
       setUsers((prev) =>
         prev.filter(
@@ -807,8 +823,9 @@ const AdminTournamentDetail = () => {
             id
           )}`,
           {
-            timeout: 10000,
-          }
+  ...getAdminAuthConfig(),
+  timeout: 10000,
+}
         );
 
       const latestData =
@@ -940,18 +957,19 @@ const AdminTournamentDetail = () => {
       // ======================================================
       // SAVE TO SERVER
       // ======================================================
-      const response =
-        await axios.post(
-          `${ADMIN_API_BASE}/admin/tournament-results/${encodeURIComponent(
-            id
-          )}/save`,
-          {
-            results: payload,
-          },
-          {
-            timeout: 15000,
-          }
-        );
+const response =
+  await axios.post(
+    `${ADMIN_API_BASE}/admin/tournament-results/${encodeURIComponent(
+      id
+    )}/save`,
+    {
+      results: payload,
+    },
+    {
+      ...getAdminAuthConfig(),
+      timeout: 15000,
+    }
+  );
 
       // ======================================================
       // UPDATE LOCAL USERS
@@ -1126,15 +1144,16 @@ const AdminTournamentDetail = () => {
 
       try {
         const response =
-          await axios.post(
-            `${ADMIN_API_BASE}/admin/tournament-results/${encodeURIComponent(
-              id
-            )}/settle`,
-            {},
-            {
-              timeout: 20000,
-            }
-          );
+  await axios.post(
+    `${ADMIN_API_BASE}/admin/tournament-results/${encodeURIComponent(
+      id
+    )}/settle`,
+    {},
+    {
+      ...getAdminAuthConfig(),
+      timeout: 20000,
+    }
+  );
 
         setMessage(
           `💰 Winning settled successfully. ${

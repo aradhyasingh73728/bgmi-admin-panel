@@ -1,3 +1,4 @@
+
 import React, {
   useCallback,
   useEffect,
@@ -15,6 +16,7 @@ const API_BASE =
 // ============================================================
 // HELPERS
 // ============================================================
+
 const money = (value) =>
   `₹${Number(value || 0).toLocaleString("en-IN")}`;
 
@@ -56,6 +58,7 @@ const timeAgo = (value) => {
 // ============================================================
 // ACTIVITY ICONS
 // ============================================================
+
 const activityIcon = {
   deposit: "💰",
   withdraw: "💸",
@@ -69,8 +72,8 @@ const activityTitle = {
 // ============================================================
 // DASHBOARD
 // ============================================================
-const Dashboard = () => {
 
+const Dashboard = () => {
   const [data, setData] = useState(null);
 
   const [loading, setLoading] = useState(true);
@@ -84,11 +87,10 @@ const Dashboard = () => {
   // ==========================================================
   // LOAD DASHBOARD
   // ==========================================================
+
   const loadDashboard = useCallback(
     async (silent = false) => {
-
       try {
-
         if (silent) {
           setRefreshing(true);
         } else {
@@ -97,10 +99,23 @@ const Dashboard = () => {
 
         setError("");
 
+        // ADMIN JWT TOKEN
+        const token = localStorage.getItem("adminToken");
+
+        if (!token) {
+          throw new Error(
+            "Admin session missing. Please login again."
+          );
+        }
+
         const res = await fetch(
           `${API_BASE}/api/admin/dashboard-overview`,
           {
+            method: "GET",
             cache: "no-store",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           }
         );
 
@@ -121,7 +136,6 @@ const Dashboard = () => {
         );
 
       } catch (err) {
-
         console.error(
           "Dashboard load error:",
           err
@@ -133,12 +147,9 @@ const Dashboard = () => {
         );
 
       } finally {
-
         setLoading(false);
         setRefreshing(false);
-
       }
-
     },
     []
   );
@@ -146,8 +157,8 @@ const Dashboard = () => {
   // ==========================================================
   // INITIAL LOAD + AUTO REFRESH
   // ==========================================================
-  useEffect(() => {
 
+  useEffect(() => {
     loadDashboard(false);
 
     const timer = setInterval(() => {
@@ -155,25 +166,21 @@ const Dashboard = () => {
     }, 10000);
 
     return () => clearInterval(timer);
-
   }, [loadDashboard]);
 
   // ==========================================================
   // SUMMARY CARDS
   // ==========================================================
-  const summary = useMemo(() => {
 
+  const summary = useMemo(() => {
     const stats = data?.stats || {};
 
     return [
-
       {
         icon: "👥",
         label: "Registered Users",
         value: stats.users?.total || 0,
-        meta: `${
-          stats.users?.verified || 0
-        } verified`,
+        meta: `${stats.users?.verified || 0} verified`,
         tone: "blue",
       },
 
@@ -206,38 +213,32 @@ const Dashboard = () => {
         ),
         tone: "red",
       },
-
     ];
-
   }, [data]);
 
   // ==========================================================
   // INITIAL LOADING
   // ==========================================================
-  if (loading && !data) {
 
+  if (loading && !data) {
     return (
       <div className="admin-dashboard loading-state">
         Loading live dashboard…
       </div>
     );
-
   }
 
   // ==========================================================
   // UI
   // ==========================================================
-  return (
 
+  return (
     <div className="admin-dashboard">
 
-      {/* ======================================================
-          TOP BAR
-      ====================================================== */}
+      {/* TOP BAR */}
+
       <div className="dashboard-topbar">
-
         <div>
-
           <div className="eyebrow">
             ADMIN CONTROL CENTER
           </div>
@@ -250,27 +251,20 @@ const Dashboard = () => {
             Live overview of users, wallet activity,
             deposits, withdrawals and bank operations.
           </p>
-
         </div>
 
         <div className="dashboard-top-actions">
-
           <div className="live-status">
-
             <span className="live-dot" />
-
             LIVE
-
           </div>
 
           <div className="updated-text">
-
             {lastUpdated
               ? `Updated ${lastUpdated.toLocaleTimeString(
                   "en-IN"
                 )}`
               : "Updating…"}
-
           </div>
 
           <button
@@ -279,46 +273,34 @@ const Dashboard = () => {
             onClick={() => loadDashboard(true)}
             disabled={refreshing}
           >
-
             {refreshing
               ? "↻ Updating…"
               : "↻ Refresh"}
-
           </button>
-
         </div>
-
       </div>
 
-      {/* ======================================================
-          ERROR
-      ====================================================== */}
-      {error && (
+      {/* ERROR */}
 
+      {error && (
         <div className="dashboard-alert">
           ⚠️ {error}
         </div>
-
       )}
 
-      {/* ======================================================
-          SUMMARY CARDS
-      ====================================================== */}
+      {/* SUMMARY CARDS */}
+
       <div className="stat-grid">
-
         {summary.map((item) => (
-
           <div
             className={`stat-card ${item.tone}`}
             key={item.label}
           >
-
             <div className="stat-icon">
               {item.icon}
             </div>
 
             <div className="stat-content">
-
               <div className="stat-label">
                 {item.label}
               </div>
@@ -330,29 +312,20 @@ const Dashboard = () => {
               <div className="stat-meta">
                 {item.meta}
               </div>
-
             </div>
-
           </div>
-
         ))}
-
       </div>
 
-      {/* ======================================================
-          ANALYTICS GRID
-      ====================================================== */}
+      {/* ANALYTICS GRID */}
+
       <div className="analytics-grid">
 
-        {/* ====================================================
-            FINANCIAL OVERVIEW
-        ==================================================== */}
+        {/* FINANCIAL OVERVIEW */}
+
         <section className="panel">
-
           <div className="panel-head">
-
             <div>
-
               <h2>
                 Financial Overview
               </h2>
@@ -360,15 +333,11 @@ const Dashboard = () => {
               <p>
                 Approved and pending wallet-related activity.
               </p>
-
             </div>
-
           </div>
 
           <div className="finance-grid">
-
             <div className="finance-item">
-
               <span>
                 Approved Deposits
               </span>
@@ -378,11 +347,9 @@ const Dashboard = () => {
                   data?.stats?.deposits?.approvedAmount
                 )}
               </strong>
-
             </div>
 
             <div className="finance-item">
-
               <span>
                 Approved Withdrawals
               </span>
@@ -392,11 +359,9 @@ const Dashboard = () => {
                   data?.stats?.withdrawals?.approvedAmount
                 )}
               </strong>
-
             </div>
 
             <div className="finance-item">
-
               <span>
                 Verified Bank Accounts
               </span>
@@ -404,11 +369,9 @@ const Dashboard = () => {
               <strong>
                 {data?.stats?.banks?.verified || 0}
               </strong>
-
             </div>
 
             <div className="finance-item">
-
               <span>
                 Total Bank Accounts
               </span>
@@ -416,22 +379,15 @@ const Dashboard = () => {
               <strong>
                 {data?.stats?.banks?.total || 0}
               </strong>
-
             </div>
-
           </div>
-
         </section>
 
-        {/* ====================================================
-            SYSTEM MODULES
-        ==================================================== */}
+        {/* SYSTEM MODULES */}
+
         <section className="panel">
-
           <div className="panel-head">
-
             <div>
-
               <h2>
                 System Modules
               </h2>
@@ -439,22 +395,17 @@ const Dashboard = () => {
               <p>
                 Live database connectivity for each module.
               </p>
-
             </div>
-
           </div>
 
           <div className="module-list">
-
             {Object.entries(
               data?.modules || {}
             ).map(([name, ok]) => (
-
               <div
                 className="module-row"
                 key={name}
               >
-
                 <span>
                   {name.replace(
                     /^./,
@@ -467,37 +418,25 @@ const Dashboard = () => {
                     ok ? "ok" : "down"
                   }`}
                 >
-
                   {ok
                     ? "● ONLINE"
                     : "● ERROR"}
-
                 </span>
-
               </div>
-
             ))}
-
           </div>
-
         </section>
-
       </div>
 
-      {/* ======================================================
-          MAIN CONTENT
-      ====================================================== */}
+      {/* MAIN CONTENT */}
+
       <div className="content-grid">
 
-        {/* ====================================================
-            LIVE ACTIVITY
-        ==================================================== */}
+        {/* LIVE ACTIVITY */}
+
         <section className="panel activity-panel">
-
           <div className="panel-head">
-
             <div>
-
               <h2>
                 Live Activity
               </h2>
@@ -505,13 +444,10 @@ const Dashboard = () => {
               <p>
                 Latest deposit and withdrawal events.
               </p>
-
             </div>
-
           </div>
 
           <div className="activity-list">
-
             {(data?.recentActivity || [])
               .filter((item) =>
                 ["deposit", "withdraw"].includes(
@@ -519,20 +455,15 @@ const Dashboard = () => {
                 )
               )
               .map((item) => (
-
                 <div
                   className="activity-item"
                   key={item.id}
                 >
-
                   <div className="activity-icon">
-
                     {activityIcon[item.type] || "•"}
-
                   </div>
 
                   <div className="activity-main">
-
                     <strong>
                       {item.title}
                     </strong>
@@ -542,26 +473,20 @@ const Dashboard = () => {
                     </span>
 
                     <small>
-
                       {activityTitle[item.type] ||
                         item.type}
 
                       {" • "}
 
                       {timeAgo(item.timestamp)}
-
                     </small>
-
                   </div>
 
                   <div className="activity-right">
-
                     {Number(item.amount || 0) > 0 && (
-
                       <strong>
                         {money(item.amount)}
                       </strong>
-
                     )}
 
                     <span
@@ -571,15 +496,10 @@ const Dashboard = () => {
                         .toLowerCase()
                         .replace(/\s+/g, "-")}`}
                     >
-
                       {item.status || "—"}
-
                     </span>
-
                   </div>
-
                 </div>
-
               ))}
 
             {!data?.recentActivity?.some((item) =>
@@ -587,30 +507,19 @@ const Dashboard = () => {
                 String(item.type).toLowerCase()
               )
             ) && (
-
               <div className="empty-row">
                 No recent deposit or withdrawal activity.
               </div>
-
             )}
-
           </div>
-
         </section>
-
       </div>
 
-      {/* ======================================================
-          FOOTER
-      ====================================================== */}
+      {/* FOOTER */}
+
       <div className="footer-strip">
-
         <span>
-
-          Database:
-
-          {" "}
-
+          Database:{" "}
           <b
             className={
               data?.modules?.database
@@ -618,45 +527,28 @@ const Dashboard = () => {
                 : "error-text"
             }
           >
-
             {data?.modules?.database
               ? "Connected"
               : "Issue detected"}
-
           </b>
-
         </span>
 
         <span>
-
-          Auto refresh:
-
-          {" "}
-
+          Auto refresh:{" "}
           <b>
             10 seconds
           </b>
-
         </span>
 
         <span>
-
-          Dashboard scope:
-
-          {" "}
-
+          Dashboard scope:{" "}
           <b>
             Users • Wallet • Deposits • Withdrawals • Banks
           </b>
-
         </span>
-
       </div>
-
     </div>
-
   );
-
 };
 
 export default Dashboard;

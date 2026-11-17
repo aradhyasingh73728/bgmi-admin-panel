@@ -1,14 +1,20 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import "./RoomManagement.css";
 
+// ============================================================
+// API CONFIG
+// ============================================================
 
 const ADMIN_API_BASE =
-  window.location.hostname === "localhost"
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1"
     ? "http://localhost:5004"
     : "https://bgmi-admin-dashboard-server-5004.onrender.com";
 
 const TOURNAMENT_API_BASE = (
-  window.location.hostname === "localhost"
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1"
     ? "http://localhost:5005"
     : "https://create-tournament-server-5005.onrender.com"
 ).replace(/\/+$/, "");
@@ -32,22 +38,31 @@ const getJsonResponse = async (response) => {
   if (!response.ok || data.success === false) {
     throw new Error(
       data?.error ||
-        data?.message ||
-        `Request failed with status ${response.status}`
+      data?.message ||
+      `Request failed with status ${response.status}`
     );
   }
 
   return data;
 };
 
-// Different possible backend count field names
+
+const getTournamentId = (tournament) => {
+  return String(
+    tournament?.id ||
+    tournament?.tournament_id ||
+    ""
+  );
+};
+
+
 const getPlayerCount = (data) => {
   const possibleCounts = [
-    data?.participantCount,
     data?.playersUpdated,
     data?.updatedPlayers,
     data?.players_updated,
     data?.updated_players,
+    data?.participantCount,
     data?.joinedPlayers,
     data?.joinedCount,
     data?.totalPlayers,
@@ -68,30 +83,69 @@ const getPlayerCount = (data) => {
   return 0;
 };
 
+
+const getNotificationCount = (data) => {
+  const possibleCounts = [
+    data?.notificationsSent,
+    data?.notificationsCreated,
+    data?.notificationCount,
+    data?.notifications_created,
+  ];
+
+  for (const value of possibleCounts) {
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== "" &&
+      Number.isFinite(Number(value))
+    ) {
+      return Number(value);
+    }
+  }
+
+  return 0;
+};
+
+
 const normalizeRoomData = (data) => {
   return {
-    roomId: data?.roomId || data?.room_id || "",
+    roomId:
+      data?.roomId ||
+      data?.room_id ||
+      "",
+
     roomPassword:
       data?.roomPassword ||
       data?.password ||
       data?.room_password ||
       "",
+
     participantCount: getPlayerCount(data),
   };
 };
+
 
 // ============================================================
 // COMPONENT
 // ============================================================
 
 const RoomManagement = () => {
+
+  // ----------------------------------------------------------
+  // STATES
+  // ----------------------------------------------------------
+
   const [tournaments, setTournaments] = useState([]);
-  const [selectedTournament, setSelectedTournament] = useState("");
+
+  const [selectedTournament, setSelectedTournament] = useState(null);
+
+  const [searchId, setSearchId] = useState("");
 
   const [roomId, setRoomId] = useState("");
   const [password, setPassword] = useState("");
 
   const [participantCount, setParticipantCount] = useState(0);
+
   const [roomPublished, setRoomPublished] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -104,28 +158,39 @@ const RoomManagement = () => {
   const [message, setMessage] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  // ============================================================
-  // API: LOAD ROOM DETAILS
-  // ============================================================
+
+  // ----------------------------------------------------------
+  // LOAD ROOM DETAILS FROM PORT 5004
+  // ----------------------------------------------------------
 
   const fetchRoomDetails = useCallback(async (tournamentId) => {
+    const adminToken = localStorage.getItem("adminToken");
+
+    if (!adminToken) {
+      throw new Error("Admin token nahi mila. Please login again.");
+    }
+
     const response = await fetch(
       `${ADMIN_API_BASE}/admin/rooms/${encodeURIComponent(
         tournamentId
-      )}`
+      )}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+        },
+      }
     );
 
     const data = await getJsonResponse(response);
 
-    return {
-      ...normalizeRoomData(data),
-      success: true,
-    };
+    return normalizeRoomData(data);
   }, []);
 
-  // ============================================================
-  // LOAD TOURNAMENTS
-  // ============================================================
+
+  // ----------------------------------------------------------
+  // LOAD CURRENT HOME PAGE TOURNAMENTS FROM PORT 5005
+  // ----------------------------------------------------------
 
   const fetchTournaments = useCallback(async () => {
     try {
@@ -133,7 +198,7 @@ const RoomManagement = () => {
       setErrorMsg("");
 
       const response = await fetch(
-        `${ADMIN_API_BASE}/api/admin/tournaments`
+        `${TOURNAMENT_API_BASE}/api/tournaments`
       );
 
       const data = await getJsonResponse(response);
@@ -142,34 +207,46 @@ const RoomManagement = () => {
         ? data.tournaments
         : [];
 
-      setTournaments(list);
+      const currentList = list
+        .map((tournament) => ({
+          ...tournament,
+          id: getTournamentId(tournament),
+        }))
+        .filter((tournament) => tournament.id);
 
-      if (list.length === 0) {
-        setRoomMap({});
-        return;
+      setTournaments(currentList);
+
+      // Keep selected tournament only if it is still in public list.
+      const selectedStillVisible = currentList.find(
+        (tournament) =>
+          tournament.id === selectedTournament?.id
+      );
+
+      if (selectedTournament && !selectedStillVisible) {
+        setSelectedTournament(null);
+        setRoomId("");
+        setPassword("");
+        setParticipantCount(0);
+        setRoomPublished(false);
       }
 
+      // Load room details for current tournaments.
       const roomEntries = await Promise.all(
-        list.map(async (tournament) => {
+        currentList.map(async (tournament) => {
           try {
             const roomData = await fetchRoomDetails(
               tournament.id
             );
 
-            return [
-              String(tournament.id),
-              roomData,
-            ];
+            return [tournament.id, roomData];
+
           } catch (error) {
             console.error(
               `ROOM LOAD ERROR - ${tournament.id}:`,
               error
             );
 
-            return [
-              String(tournament.id),
-              null,
-            ];
+            return [tournament.id, null];
           }
         })
       );
@@ -177,30 +254,71 @@ const RoomManagement = () => {
       setRoomMap(
         Object.fromEntries(roomEntries)
       );
+
     } catch (error) {
       console.error("LOAD TOURNAMENTS ERROR:", error);
 
       setErrorMsg(
-        error.message || "Failed to load tournaments."
+        error.message || "Failed to load current tournaments."
       );
+
     } finally {
       setLoading(false);
     }
-  }, [fetchRoomDetails]);
+  }, [fetchRoomDetails, selectedTournament]);
 
-  // ============================================================
+
+  // ----------------------------------------------------------
   // INITIAL LOAD
-  // ============================================================
+  // ----------------------------------------------------------
 
   useEffect(() => {
     fetchTournaments();
   }, [fetchTournaments]);
 
-  // ============================================================
-  // LOAD SELECTED TOURNAMENT ROOM
-  // ============================================================
 
-  const loadRoomDetails = async (tournamentId) => {
+  // ----------------------------------------------------------
+  // SEARCH BY TOURNAMENT ID OR NAME
+  // ----------------------------------------------------------
+
+  const filteredTournaments = useMemo(() => {
+    const search = searchId.trim().toLowerCase();
+
+    if (!search) {
+      return tournaments;
+    }
+
+    return tournaments.filter((tournament) => {
+      const id = String(tournament.id || "").toLowerCase();
+
+      const name = String(
+        tournament.name ||
+        tournament.tournament_name ||
+        ""
+      ).toLowerCase();
+
+      return (
+        id.includes(search) ||
+        name.includes(search)
+      );
+    });
+  }, [tournaments, searchId]);
+
+
+  // ----------------------------------------------------------
+  // SELECT TOURNAMENT AND LOAD ITS ROOM
+  // ----------------------------------------------------------
+
+  const loadRoomDetails = async (tournament) => {
+    const tournamentId = getTournamentId(tournament);
+
+    if (!tournamentId) return;
+
+    setSelectedTournament({
+      ...tournament,
+      id: tournamentId,
+    });
+
     setMessage("");
     setErrorMsg("");
 
@@ -208,8 +326,6 @@ const RoomManagement = () => {
     setPassword("");
     setParticipantCount(0);
     setRoomPublished(false);
-
-    if (!tournamentId) return;
 
     try {
       setRoomLoading(true);
@@ -221,39 +337,30 @@ const RoomManagement = () => {
       setParticipantCount(data.participantCount);
 
       setRoomPublished(
-        Boolean(data.roomId || data.roomPassword)
+        Boolean(data.roomId && data.roomPassword)
       );
 
       setRoomMap((previous) => ({
         ...previous,
-        [String(tournamentId)]: data,
+        [tournamentId]: data,
       }));
+
     } catch (error) {
       console.error("LOAD ROOM ERROR:", error);
 
       setErrorMsg(
         error.message || "Failed to load room details."
       );
+
     } finally {
       setRoomLoading(false);
     }
   };
 
-  // ============================================================
-  // TOURNAMENT SELECT
-  // ============================================================
 
-  const handleTournamentChange = (event) => {
-    const tournamentId = event.target.value;
-
-    setSelectedTournament(tournamentId);
-
-    loadRoomDetails(tournamentId);
-  };
-
-  // ============================================================
-  // PUBLISH / UPDATE ROOM + NOTIFICATIONS
-  // ============================================================
+  // ----------------------------------------------------------
+  // PUBLISH / UPDATE ROOM AND SHARE WITH JOINED PLAYERS
+  // ----------------------------------------------------------
 
   const handleSaveRoom = async (event) => {
     event.preventDefault();
@@ -262,38 +369,52 @@ const RoomManagement = () => {
     setErrorMsg("");
 
     if (!selectedTournament) {
-      setErrorMsg("Please select a tournament.");
+      setErrorMsg("Please select a tournament first.");
       return;
     }
+
+    const selectedId = selectedTournament.id;
 
     const cleanRoomId = roomId.trim();
     const cleanPassword = password.trim();
 
     if (!cleanRoomId) {
-      setErrorMsg("Please enter Room ID.");
+      setErrorMsg("Please enter BGMI Room ID.");
       return;
     }
 
     if (!cleanPassword) {
-      setErrorMsg("Please enter Room Password.");
+      setErrorMsg("Please enter BGMI Room Password.");
       return;
     }
+
+    const adminToken = localStorage.getItem("adminToken");
+
+    if (!adminToken) {
+      setErrorMsg(
+        "Admin token nahi mila. Please logout karke login karo."
+      );
+      return;
+    }
+
+    let roomSavedOn5004 = false;
 
     try {
       setSaving(true);
 
-      // ========================================================
-      // STEP 1: SAVE ROOM DETAILS ON EXISTING SERVER (5004)
-      // ========================================================
+      // ======================================================
+      // STEP 1: SAVE ROOM DETAILS ON PORT 5004
+      // ======================================================
 
-      const response = await fetch(
+      const saveResponse = await fetch(
         `${ADMIN_API_BASE}/admin/rooms/${encodeURIComponent(
-          selectedTournament
+          selectedId
         )}`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${adminToken}`,
           },
           body: JSON.stringify({
             roomId: cleanRoomId,
@@ -302,31 +423,23 @@ const RoomManagement = () => {
         }
       );
 
-      const saveData = await getJsonResponse(response);
+      const saveData = await getJsonResponse(saveResponse);
 
-      console.log("ROOM SAVE RESPONSE:", saveData);
+      roomSavedOn5004 = true;
 
-      // ========================================================
-      // STEP 2: SHARE ROOM + CREATE PLAYER NOTIFICATIONS (5005)
-      // ========================================================
+      console.log(
+        "ROOM SAVE RESPONSE:",
+        saveData
+      );
 
-      if (!TOURNAMENT_API_BASE) {
-        throw new Error(
-          "Tournament API URL missing. Set REACT_APP_TOURNAMENT_API_URL."
-        );
-      }
 
-      const adminToken = localStorage.getItem("adminToken");
+      // ======================================================
+      // STEP 2: SHARE ROOM WITH JOINED PLAYERS ON PORT 5005
+      // ======================================================
 
-      if (!adminToken) {
-        throw new Error(
-          "Admin token nahi mila. Please logout karke login karo."
-        );
-      }
-
-      const notificationResponse = await fetch(
+      const shareResponse = await fetch(
         `${TOURNAMENT_API_BASE}/api/admin/tournaments/${encodeURIComponent(
-          selectedTournament
+          selectedId
         )}/share-room`,
         {
           method: "POST",
@@ -341,27 +454,23 @@ const RoomManagement = () => {
         }
       );
 
-      const notificationData = await getJsonResponse(
-        notificationResponse
-      );
+      const shareData = await getJsonResponse(shareResponse);
 
       console.log(
-        "ROOM NOTIFICATION RESPONSE:",
-        notificationData
+        "ROOM SHARE RESPONSE:",
+        shareData
       );
 
-      // ========================================================
-      // STEP 3: GET LATEST ROOM DETAILS
-      // ========================================================
 
-      const responseCount = getPlayerCount(saveData);
+      // ======================================================
+      // STEP 3: GET LATEST ROOM DETAILS
+      // ======================================================
 
       let freshRoomData = null;
 
       try {
-        freshRoomData = await fetchRoomDetails(
-          selectedTournament
-        );
+        freshRoomData = await fetchRoomDetails(selectedId);
+
       } catch (refreshError) {
         console.error(
           "ROOM REFRESH ERROR:",
@@ -371,7 +480,7 @@ const RoomManagement = () => {
 
       const finalCount = freshRoomData
         ? freshRoomData.participantCount
-        : responseCount;
+        : getPlayerCount(shareData);
 
       const finalRoomData = {
         roomId:
@@ -390,78 +499,61 @@ const RoomManagement = () => {
 
       setRoomMap((previous) => ({
         ...previous,
-        [String(selectedTournament)]: finalRoomData,
+        [selectedId]: finalRoomData,
       }));
 
-      // ========================================================
-      // STEP 4: SUCCESS MESSAGE
-      // ========================================================
 
-      const notificationCount = Number(
-        notificationData.notificationsSent || 0
-      );
+      // ======================================================
+      // STEP 4: SHOW SHARE RESULT
+      // ======================================================
+
+      const updatedPlayers = getPlayerCount(shareData);
+      const notificationsCreated = getNotificationCount(shareData);
 
       setMessage(
-        `Room saved successfully. ${finalCount} player(s) updated. ${notificationCount} notification(s) created.`
+        `Room saved and shared successfully. ${updatedPlayers} player(s) updated. ${notificationsCreated} notification(s) created.`
       );
 
       console.log(
-        "ROOM DATABASE DETAILS:",
-        freshRoomData
-      );
-
-      console.log(
-        "FINAL PLAYER COUNT:",
-        finalCount
+        "PLAYERS UPDATED:",
+        updatedPlayers
       );
 
       console.log(
         "NOTIFICATIONS CREATED:",
-        notificationCount
+        notificationsCreated
       );
 
-      if (notificationData.notificationError) {
+      if (shareData.notificationError) {
         console.error(
-          "NOTIFICATION DATABASE ERROR:",
-          notificationData.notificationError
+          "NOTIFICATION ERROR:",
+          shareData.notificationError
         );
       }
 
     } catch (error) {
       console.error("PUBLISH ROOM ERROR:", error);
 
-      setErrorMsg(
-        error.message || "Failed to publish room."
-      );
-
-      // Room may already have been saved on port 5004.
-      // Refresh the displayed room data even if notification
-      // creation fails on port 5005.
-
-      try {
-        const freshRoomData = await fetchRoomDetails(
-          selectedTournament
+      if (roomSavedOn5004) {
+        setErrorMsg(
+          `Room details Port 5004 par save ho gaye, lekin players ko share karne mein error aaya: ${error.message}`
         );
 
-        setRoomId(freshRoomData.roomId);
-        setPassword(freshRoomData.roomPassword);
-        setParticipantCount(freshRoomData.participantCount);
-
-        setRoomPublished(
-          Boolean(
-            freshRoomData.roomId ||
-            freshRoomData.roomPassword
-          )
-        );
+        // Keep the saved room visible in the form.
+        setRoomPublished(true);
 
         setRoomMap((previous) => ({
           ...previous,
-          [String(selectedTournament)]: freshRoomData,
+          [selectedId]: {
+            roomId: cleanRoomId,
+            roomPassword: cleanPassword,
+            participantCount,
+          },
         }));
-      } catch (refreshError) {
-        console.error(
-          "ERROR REFRESHING ROOM AFTER FAILURE:",
-          refreshError
+
+      } else {
+        setErrorMsg(
+          error.message || "Failed to save room."
         );
       }
 
@@ -470,21 +562,31 @@ const RoomManagement = () => {
     }
   };
 
-  // ============================================================
-  // CLEAR ROOM
-  // ============================================================
+
+  // ----------------------------------------------------------
+  // CLEAR ROOM DETAILS
+  // ----------------------------------------------------------
 
   const handleClearRoom = async () => {
     if (!selectedTournament) {
-      setErrorMsg("Please select a tournament.");
+      setErrorMsg("Please select a tournament first.");
       return;
     }
+
+    const selectedId = selectedTournament.id;
 
     const confirmed = window.confirm(
       "Are you sure you want to remove room details from all joined players?"
     );
 
     if (!confirmed) return;
+
+    const adminToken = localStorage.getItem("adminToken");
+
+    if (!adminToken) {
+      setErrorMsg("Admin token nahi mila. Please login again.");
+      return;
+    }
 
     try {
       setClearing(true);
@@ -493,10 +595,13 @@ const RoomManagement = () => {
 
       const response = await fetch(
         `${ADMIN_API_BASE}/admin/rooms/${encodeURIComponent(
-          selectedTournament
+          selectedId
         )}`,
         {
           method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${adminToken}`,
+          },
         }
       );
 
@@ -508,12 +613,13 @@ const RoomManagement = () => {
       setPassword("");
       setRoomPublished(false);
 
-      let freshRoomData = null;
+      let finalCount = 0;
 
       try {
-        freshRoomData = await fetchRoomDetails(
-          selectedTournament
-        );
+        const freshRoomData = await fetchRoomDetails(selectedId);
+
+        finalCount = freshRoomData.participantCount;
+
       } catch (refreshError) {
         console.error(
           "ROOM CLEAR REFRESH ERROR:",
@@ -521,15 +627,11 @@ const RoomManagement = () => {
         );
       }
 
-      const finalCount = freshRoomData
-        ? freshRoomData.participantCount
-        : 0;
-
       setParticipantCount(finalCount);
 
       setRoomMap((previous) => ({
         ...previous,
-        [String(selectedTournament)]: {
+        [selectedId]: {
           roomId: "",
           roomPassword: "",
           participantCount: finalCount,
@@ -539,9 +641,6 @@ const RoomManagement = () => {
       setMessage(
         `Room details cleared. ${clearedCount} player(s) updated.`
       );
-
-      console.log("ROOM CLEAR RESPONSE:", data);
-      console.log("ROOM COUNT AFTER CLEAR:", finalCount);
 
     } catch (error) {
       console.error("CLEAR ROOM ERROR:", error);
@@ -555,15 +654,15 @@ const RoomManagement = () => {
     }
   };
 
-  // ============================================================
-  // CURRENT TOURNAMENT
-  // ============================================================
 
-  const currentTournament = tournaments.find(
-    (tournament) =>
-      String(tournament.id) ===
-      String(selectedTournament)
-  );
+  // ----------------------------------------------------------
+  // SELECTED TOURNAMENT
+  // ----------------------------------------------------------
+
+  const selectedRoom = selectedTournament
+    ? roomMap[selectedTournament.id]
+    : null;
+
 
   // ============================================================
   // RENDER
@@ -577,326 +676,337 @@ const RoomManagement = () => {
       </h2>
 
       <p className="page-subtitle">
-        Publish BGMI Room ID and Password to users who joined a tournament.
+        Select a current Home Page tournament and share its Room ID and Password with joined players.
       </p>
 
-      {/* ROOM FORM */}
 
-      <form
-        className="form-grid"
-        onSubmit={handleSaveRoom}
+      {/* SEARCH AND REFRESH */}
+
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          flexWrap: "wrap",
+          marginTop: "20px",
+          marginBottom: "16px",
+        }}
       >
 
-        <select
-          value={selectedTournament}
-          onChange={handleTournamentChange}
-          disabled={
-            loading ||
-            roomLoading ||
-            saving ||
-            clearing
-          }
-        >
-
-          <option value="">
-            Select Tournament
-          </option>
-
-          {tournaments.map((tournament) => (
-            <option
-              key={tournament.id}
-              value={tournament.id}
-            >
-              {tournament.name || "Tournament"} -{" "}
-              {tournament.id}
-            </option>
-          ))}
-
-        </select>
-
-        {/* ROOM ID */}
-
         <input
           type="text"
-          name="roomId"
-          placeholder="BGMI Room ID"
-          value={roomId}
-          onChange={(event) =>
-            setRoomId(event.target.value)
-          }
-          disabled={
-            !selectedTournament ||
-            roomLoading ||
-            saving ||
-            clearing
-          }
+          placeholder="Search Tournament ID or Name..."
+          value={searchId}
+          onChange={(event) => setSearchId(event.target.value)}
+          style={{
+            flex: 1,
+            minWidth: "220px",
+          }}
         />
 
-        {/* ROOM PASSWORD */}
-
-        <input
-          type="text"
-          name="password"
-          placeholder="BGMI Room Password"
-          value={password}
-          onChange={(event) =>
-            setPassword(event.target.value)
-          }
-          disabled={
-            !selectedTournament ||
-            roomLoading ||
-            saving ||
-            clearing
-          }
-        />
-
-        {/* PUBLISH / UPDATE */}
-
         <button
-          className="btn-primary"
-          type="submit"
-          disabled={
-            !selectedTournament ||
-            roomLoading ||
-            saving ||
-            clearing
-          }
-        >
-          {saving
-            ? "Publishing..."
-            : roomPublished
-            ? "Update Room"
-            : "Publish Room"}
-        </button>
-
-        {/* CLEAR */}
-
-        <button
-          className="btn-danger"
           type="button"
-          onClick={handleClearRoom}
-          disabled={
-            !selectedTournament ||
-            roomLoading ||
-            saving ||
-            clearing ||
-            !roomPublished
-          }
+          className="btn-secondary"
+          onClick={fetchTournaments}
+          disabled={loading || saving || clearing}
         >
-          {clearing
-            ? "Clearing..."
-            : "Clear Room"}
+          {loading ? "Loading..." : "Refresh"}
         </button>
 
-      </form>
+      </div>
+
+
+      {/* TOURNAMENT COUNT */}
+
+      <p style={{ marginBottom: "12px" }}>
+        <strong>Current Home Page Tournaments:</strong>{" "}
+        {filteredTournaments.length}
+      </p>
+
+
+      {/* TOURNAMENT LIST */}
+
+      <div style={{ overflowX: "auto" }}>
+
+        <table className="data-table">
+
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Tournament</th>
+              <th>Tournament ID</th>
+              <th>Mode</th>
+              <th>Map</th>
+              <th>Joined</th>
+              <th>Room Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+            {loading ? (
+              <tr>
+                <td colSpan="8" className="empty-row">
+                  Loading current tournaments...
+                </td>
+              </tr>
+            ) : filteredTournaments.length === 0 ? (
+              <tr>
+                <td colSpan="8" className="empty-row">
+                  {searchId.trim()
+                    ? "No tournament found."
+                    : "No current Home Page tournaments found."}
+                </td>
+              </tr>
+            ) : (
+              filteredTournaments.map((tournament, index) => {
+                const room = roomMap[tournament.id];
+
+                const hasRoom = Boolean(
+                  room?.roomId && room?.roomPassword
+                );
+
+                const isSelected =
+                  selectedTournament?.id === tournament.id;
+
+                return (
+                  <tr
+                    key={tournament.id}
+                    style={
+                      isSelected
+                        ? {
+                            background: "rgba(34,197,94,0.08)",
+                          }
+                        : {}
+                    }
+                  >
+
+                    <td>{index + 1}</td>
+
+                    <td>
+                      <strong>
+                        {tournament.name ||
+                          tournament.tournament_name ||
+                          "Tournament"}
+                      </strong>
+                    </td>
+
+                    <td>
+                      <strong>{tournament.id}</strong>
+                    </td>
+
+                    <td>
+                      {tournament.mode ||
+                        tournament.game_mode ||
+                        "-"}
+                    </td>
+
+                    <td>
+                      {tournament.map || "-"}
+                    </td>
+
+                    <td>
+                      {Number(room?.participantCount ?? 0)}
+                    </td>
+
+                    <td>
+                      {hasRoom ? (
+                        <span className="status approved">
+                          Published
+                        </span>
+                      ) : (
+                        <span className="status pending">
+                          Not Published
+                        </span>
+                      )}
+                    </td>
+
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={
+                          roomLoading ||
+                          saving ||
+                          clearing
+                        }
+                        onClick={() => loadRoomDetails(tournament)}
+                      >
+                        {isSelected
+                          ? "Selected"
+                          : "Manage Room"}
+                      </button>
+                    </td>
+
+                  </tr>
+                );
+              })
+            )}
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+
+      {/* ROOM MANAGEMENT FORM */}
+
+      {selectedTournament && (
+        <div
+          style={{
+            marginTop: "24px",
+            padding: "18px",
+            borderRadius: "12px",
+            border: "1px solid rgba(255,255,255,0.15)",
+          }}
+        >
+
+          <h3 style={{ marginTop: 0 }}>
+            Manage Tournament Room
+          </h3>
+
+          <div style={{ marginBottom: "16px" }}>
+
+            <p>
+              <strong>Tournament:</strong>{" "}
+              {selectedTournament.name ||
+                selectedTournament.tournament_name ||
+                "Tournament"}
+            </p>
+
+            <p>
+              <strong>Tournament ID:</strong>{" "}
+              {selectedTournament.id}
+            </p>
+
+            <p>
+              <strong>Joined Players:</strong>{" "}
+              {participantCount}
+            </p>
+
+          </div>
+
+
+          {roomLoading ? (
+            <p>Loading room details...</p>
+          ) : (
+            <form
+              className="form-grid"
+              onSubmit={handleSaveRoom}
+            >
+
+              {/* ROOM ID */}
+
+              <input
+                type="text"
+                name="roomId"
+                placeholder="Enter BGMI Room ID"
+                value={roomId}
+                onChange={(event) =>
+                  setRoomId(event.target.value)
+                }
+                disabled={saving || clearing}
+              />
+
+
+              {/* ROOM PASSWORD */}
+
+              <input
+                type="text"
+                name="password"
+                placeholder="Enter BGMI Room Password"
+                value={password}
+                onChange={(event) =>
+                  setPassword(event.target.value)
+                }
+                disabled={saving || clearing}
+              />
+
+
+              {/* PUBLISH / UPDATE */}
+
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={saving || clearing}
+              >
+                {saving
+                  ? "Saving and Sharing..."
+                  : roomPublished
+                  ? "Update & Share Room"
+                  : "Publish & Share Room"}
+              </button>
+
+
+              {/* CLEAR */}
+
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={handleClearRoom}
+                disabled={
+                  saving ||
+                  clearing ||
+                  !roomPublished
+                }
+              >
+                {clearing
+                  ? "Clearing..."
+                  : "Clear Room"}
+              </button>
+
+            </form>
+          )}
+
+          {roomPublished && (
+            <p
+              style={{
+                marginTop: "14px",
+                color: "#16a34a",
+                fontWeight: 600,
+              }}
+            >
+              Room details are saved. Use Update & Share Room to send updated details to players again.
+            </p>
+          )}
+
+        </div>
+      )}
+
 
       {/* SUCCESS MESSAGE */}
 
       {message && (
         <p
           style={{
-            marginTop: "12px",
-            fontWeight: 700,
+            marginTop: "16px",
+            padding: "12px",
+            borderRadius: "8px",
             color: "#16a34a",
+            fontWeight: 700,
           }}
         >
           {message}
         </p>
       )}
 
+
       {/* ERROR MESSAGE */}
 
       {errorMsg && (
         <p
           style={{
-            marginTop: "12px",
-            fontWeight: 700,
+            marginTop: "16px",
+            padding: "12px",
+            borderRadius: "8px",
             color: "#ef4444",
+            fontWeight: 700,
           }}
         >
           Error: {errorMsg}
         </p>
       )}
-
-      {/* SELECTED TOURNAMENT INFO */}
-
-      {currentTournament && (
-        <div
-          style={{
-            marginTop: "20px",
-            padding: "16px",
-            borderRadius: "12px",
-            border: "1px solid rgba(255,255,255,0.12)",
-          }}
-        >
-
-          <h3
-            style={{
-              margin: "0 0 12px",
-            }}
-          >
-            {currentTournament.name || "Tournament"}
-          </h3>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(150px, 1fr))",
-              gap: "12px",
-            }}
-          >
-
-            <div>
-              <small>Tournament ID</small>
-              <div>
-                <strong>{currentTournament.id}</strong>
-              </div>
-            </div>
-
-            <div>
-              <small>Type</small>
-              <div>
-                <strong>
-                  {currentTournament.team_type ||
-                    currentTournament.teamType ||
-                    "-"}
-                </strong>
-              </div>
-            </div>
-
-            <div>
-              <small>Map</small>
-              <div>
-                <strong>
-                  {currentTournament.map || "-"}
-                </strong>
-              </div>
-            </div>
-
-            <div>
-              <small>Joined Players</small>
-              <div>
-                <strong>{participantCount}</strong>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* TOURNAMENT TABLE */}
-
-      <table className="data-table">
-
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Tournament</th>
-            <th>Tournament ID</th>
-            <th>Room ID</th>
-            <th>Password</th>
-            <th>Joined</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-
-        <tbody>
-
-          {loading ? (
-            <tr>
-              <td
-                colSpan="8"
-                className="empty-row"
-              >
-                Loading tournaments...
-              </td>
-            </tr>
-          ) : tournaments.length === 0 ? (
-            <tr>
-              <td
-                colSpan="8"
-                className="empty-row"
-              >
-                No tournaments found.
-              </td>
-            </tr>
-          ) : (
-            tournaments.map((tournament, index) => {
-              const room =
-                roomMap[String(tournament.id)] || null;
-
-              const hasRoom = Boolean(
-                room?.roomId || room?.roomPassword
-              );
-
-              return (
-                <tr key={tournament.id}>
-
-                  <td>{index + 1}</td>
-
-                  <td>
-                    {tournament.name || "Tournament"}
-                  </td>
-
-                  <td>
-                    <strong>{tournament.id}</strong>
-                  </td>
-
-                  <td>
-                    {room?.roomId || "-"}
-                  </td>
-
-                  <td>
-                    {room?.roomPassword || "-"}
-                  </td>
-
-                  <td>
-                    {Number(room?.participantCount ?? 0)}
-                  </td>
-
-                  <td>
-                    {hasRoom ? (
-                      <span className="status approved">
-                        Published
-                      </span>
-                    ) : (
-                      <span className="status pending">
-                        Not Published
-                      </span>
-                    )}
-                  </td>
-
-                  <td>
-                    <button
-                      className="btn-secondary"
-                      type="button"
-                      disabled={
-                        roomLoading ||
-                        saving ||
-                        clearing
-                      }
-                      onClick={() => {
-                        setSelectedTournament(
-                          String(tournament.id)
-                        );
-
-                        loadRoomDetails(tournament.id);
-                      }}
-                    >
-                      {hasRoom ? "Edit Room" : "Manage"}
-                    </button>
-                  </td>
-
-                </tr>
-              );
-            })
-          )}
-
-        </tbody>
-
-      </table>
 
     </div>
   );

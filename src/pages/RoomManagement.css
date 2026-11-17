@@ -1,0 +1,374 @@
+
+/* =========================================================
+   ROOM MANAGEMENT - COMPLETE RESPONSIVE CSS
+   Desktop + Tablet + Mobile
+========================================================= */
+
+/* MAIN PAGE */
+
+.page {
+  width: 100%;
+  min-width: 0;
+  padding: 24px;
+  box-sizing: border-box;
+  color: #e5e7eb;
+}
+
+/* PAGE HEADING */
+
+.page-title {
+  margin: 0 0 8px;
+  font-size: 26px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.page-subtitle {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* SEARCH INPUT */
+
+.page input[type="text"] {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  outline: none;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.page input[type="text"]::placeholder {
+  color: #64748b;
+}
+
+.page input[type="text"]:focus {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+}
+
+.page input[type="text"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* BUTTONS */
+
+.page button {
+  min-height: 40px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.page button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.page .btn-secondary {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.page .btn-secondary:hover:not(:disabled) {
+  background: #475569;
+}
+
+.page .btn-primary {
+  background: #16a34a;
+  color: white;
+}
+
+.page .btn-primary:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.page .btn-danger {
+  background: #dc2626;
+  color: white;
+}
+
+.page .btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+/* TOURNAMENT COUNT */
+
+.page > p {
+  color: #cbd5e1;
+  font-size: 14px;
+}
+
+.page > p strong {
+  color: #f8fafc;
+}
+
+/* TABLE WRAPPER */
+
+.page > div[style*="overflowX"] {
+  width: 100%;
+  overflow-x: auto !important;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: #0f172a;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #0f172a;
+}
+
+/* TABLE */
+
+.data-table {
+  width: 100%;
+  min-width: 850px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.data-table thead {
+  background: #1e293b;
+}
+
+.data-table th {
+  padding: 15px 13px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  border-bottom: 1px solid #334155;
+}
+
+.data-table td {
+  padding: 14px 13px;
+  color: #e2e8f0;
+  border-bottom: 1px solid #1e293b;
+  white-space: nowrap;
+}
+
+.data-table tbody tr {
+  transition: background 0.2s;
+}
+
+.data-table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.07);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table td strong {
+  color: #f8fafc;
+}
+
+.data-table .empty-row {
+  padding: 30px 15px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+/* STATUS BADGES */
+
+.page .status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.page .status.approved {
+  color: #4ade80;
+  background: rgba(22, 163, 74, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.page .status.pending {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* ROOM MANAGEMENT FORM CARD */
+
+.page > div[style*="borderRadius"] {
+  box-sizing: border-box;
+  width: 100%;
+  background: #0f172a;
+  border: 1px solid #334155 !important;
+  border-radius: 12px !important;
+}
+
+.page h3 {
+  color: #f8fafc;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.page h3 + div p {
+  margin: 8px 0;
+  color: #cbd5e1;
+  font-size: 14px;
+}
+
+.page h3 + div p strong {
+  color: #f8fafc;
+}
+
+/* FORM GRID */
+
+.page .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+.page .form-grid input {
+  min-width: 0;
+}
+
+.page .form-grid button {
+  width: 100%;
+}
+
+/* SUCCESS / ERROR MESSAGES */
+
+.page p[style*="color: rgb(22, 163, 74)"] {
+  background: rgba(22, 163, 74, 0.10);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.page p[style*="color: rgb(239, 68, 68)"] {
+  background: rgba(220, 38, 38, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* =========================================================
+   TABLET
+========================================================= */
+
+@media (max-width: 900px) {
+  .page {
+    padding: 18px;
+  }
+
+  .page-title {
+    font-size: 23px;
+  }
+
+  .data-table {
+    min-width: 800px;
+  }
+}
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 600px) {
+  .page {
+    padding: 12px;
+  }
+
+  .page-title {
+    font-size: 21px;
+  }
+
+  .page-subtitle {
+    font-size: 12px;
+  }
+
+  /* Search and refresh */
+
+  .page > div[style*="display: flex"] {
+    gap: 8px !important;
+  }
+
+  .page > div[style*="display: flex"] input {
+    min-width: 0 !important;
+    flex: 1 1 100%;
+  }
+
+  .page > div[style*="display: flex"] button {
+    width: 100%;
+  }
+
+  /* Tournament table */
+
+  .data-table {
+    min-width: 780px;
+    font-size: 12px;
+  }
+
+  .data-table th {
+    padding: 12px 10px;
+    font-size: 11px;
+  }
+
+  .data-table td {
+    padding: 12px 10px;
+  }
+
+  /* Room form */
+
+  .page > div[style*="borderRadius"] {
+    padding: 14px !important;
+    margin-top: 18px !important;
+  }
+
+  .page h3 {
+    font-size: 17px;
+  }
+
+  .page .form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .page .form-grid input {
+    min-height: 46px;
+  }
+
+  .page .form-grid button {
+    min-height: 44px;
+  }
+
+  .page h3 + div p {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* SMALL MOBILE */
+
+@media (max-width: 360px) {
+  .page {
+    padding: 9px;
+  }
+
+  .page-title {
+    font-size: 19px;
+  }
+
+  .page .form-grid button {
+    font-size: 12px;
+    padding: 10px;
+  }
+}
