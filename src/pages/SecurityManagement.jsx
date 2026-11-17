@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import "./SecurityManagement.css";
 
@@ -21,14 +22,17 @@ function SecurityManagement() {
   const [deviceActionLoading, setDeviceActionLoading] = useState("");
 
   // DEVICE BAN FORM STATE
-  // { installationId, reason, permanent }
   const [banForm, setBanForm] = useState(null);
+
+  // =====================================================
+  // AUTH HELPERS
+  // =====================================================
 
   const getToken = () => {
     return localStorage.getItem("adminToken");
   };
 
-  const apiRequest = async (url, options = {}) => {
+  const apiRequest = React.useCallback(async (url, options = {}) => {
     const token = getToken();
 
     if (!token) {
@@ -55,7 +59,7 @@ function SecurityManagement() {
     }
 
     return data;
-  };
+  }, []);
 
   // =====================================================
   // REVOKE ALL ADMIN SESSIONS
@@ -117,24 +121,33 @@ function SecurityManagement() {
   // LOAD USERS
   // =====================================================
 
-const loadUsers = React.useCallback(async () => {
-  setLoading(true);
-  setError("");
+  const loadUsers = React.useCallback(async () => {
+    setLoading(true);
+    setError("");
 
-  try {
-    const data = await apiRequest("/users");
+    try {
+      const data = await apiRequest("/users");
 
-    if (!Array.isArray(data.users)) {
-      throw new Error("Invalid users response from server.");
+      if (!Array.isArray(data.users)) {
+        throw new Error("Invalid users response from server.");
+      }
+
+      setUsers(data.users);
+    } catch (err) {
+      setError(err.message || "Unable to load players.");
+    } finally {
+      setLoading(false);
     }
+  }, [apiRequest]);
 
-    setUsers(data.users);
-  } catch (err) {
-    setError(err.message || "Unable to load players.");
-  } finally {
-    setLoading(false);
-  }
-}, []);
+  // =====================================================
+  // INITIAL LOAD USERS
+  // =====================================================
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
   // =====================================================
   // LOAD PLAYER DEVICES
   // =====================================================
@@ -173,7 +186,6 @@ const loadUsers = React.useCallback(async () => {
 
     setExpandedProfile(profileId);
 
-    // Load devices when opening the device section.
     await loadPlayerDevices(profileId);
   };
 
@@ -197,7 +209,7 @@ const loadUsers = React.useCallback(async () => {
   };
 
   // =====================================================
-  // BAN PLAYER DEVICE (raw installation_id)
+  // BAN PLAYER DEVICE
   // =====================================================
 
   const submitDeviceBan = async (user, device) => {
@@ -235,7 +247,6 @@ const loadUsers = React.useCallback(async () => {
     setSuccess("");
 
     try {
-      // Expiry server decide karta hai (permanent = never, warna 30 din)
       const data = await apiRequest("/devices/ban", {
         method: "POST",
         body: JSON.stringify({
@@ -811,7 +822,7 @@ const loadUsers = React.useCallback(async () => {
                                           </button>
                                         )}
 
-                                        {/* DEVICE BAN FORM (reason + duration) */}
+                                        {/* DEVICE BAN FORM */}
 
                                         {!isDeviceBanned && formOpen && (
                                           <div
@@ -851,8 +862,7 @@ const loadUsers = React.useCallback(async () => {
                                                 setBanForm({
                                                   ...banForm,
                                                   permanent:
-                                                    e.target.value ===
-                                                    "permanent",
+                                                    e.target.value === "permanent",
                                                 })
                                               }
                                               style={{

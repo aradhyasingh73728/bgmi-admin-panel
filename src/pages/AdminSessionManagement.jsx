@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useState } from "react";
 import "./AdminSessionManagement.css";
 
@@ -50,7 +49,9 @@ function AdminSessionManagement() {
       const token = getAdminToken();
 
       if (!token) {
-        throw new Error("Admin authentication token not found. Please login again.");
+        throw new Error(
+          "Admin authentication token not found. Please login again."
+        );
       }
 
       const response = await fetch(`${API_BASE}/sessions`, {
@@ -64,23 +65,15 @@ function AdminSessionManagement() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.message || "Unable to fetch admin sessions."
-        );
+        throw new Error(data.message || "Unable to fetch admin sessions.");
       }
 
       if (data.success !== true) {
-        throw new Error(
-          data.message || "Invalid sessions response."
-        );
+        throw new Error(data.message || "Invalid sessions response.");
       }
 
-      setSessions(
-        Array.isArray(data.sessions) ? data.sessions : []
-      );
-
+      setSessions(Array.isArray(data.sessions) ? data.sessions : []);
       setCurrentSessionId(data.currentSessionId || null);
-
     } catch (err) {
       console.error("FETCH SESSIONS ERROR:", err);
       setError(err.message || "Something went wrong.");
@@ -134,18 +127,13 @@ function AdminSessionManagement() {
       const data = await response.json();
 
       if (!response.ok || data.success !== true) {
-        throw new Error(
-          data.message || "Failed to revoke this session."
-        );
+        throw new Error(data.message || "Failed to revoke this session.");
       }
 
       setSuccess("Selected device session has been revoked successfully.");
-
       setSelectedSession(null);
 
-      // Refresh sessions after successful revoke
       await fetchSessions(true);
-
     } catch (err) {
       console.error("REVOKE SESSION ERROR:", err);
       setError(err.message || "Unable to revoke session.");
@@ -187,7 +175,6 @@ function AdminSessionManagement() {
     return session.user_agent || "Unknown Browser";
   };
 
-
   const isCurrentSession = (session) => {
     return (
       currentSessionId &&
@@ -228,7 +215,6 @@ function AdminSessionManagement() {
 
   return (
     <div className="admin-sessions-page">
-
       {/* PAGE HEADER */}
 
       <div className="sessions-header">
@@ -268,7 +254,6 @@ function AdminSessionManagement() {
       {/* STATISTICS */}
 
       <div className="sessions-stats">
-
         <div className="session-stat-card">
           <div className="stat-icon blue">💻</div>
 
@@ -295,13 +280,11 @@ function AdminSessionManagement() {
             <p>Revoked Sessions</p>
           </div>
         </div>
-
       </div>
 
       {/* SESSION TABLE */}
 
       <div className="sessions-table-card">
-
         <div className="sessions-table-header">
           <div>
             <h2>Logged-in Devices</h2>
@@ -316,11 +299,8 @@ function AdminSessionManagement() {
             <p>There are currently no admin sessions to display.</p>
           </div>
         ) : (
-
           <div className="sessions-table-wrapper">
-
             <table className="sessions-table">
-
               <thead>
                 <tr>
                   <th>DEVICE</th>
@@ -333,29 +313,20 @@ function AdminSessionManagement() {
               </thead>
 
               <tbody>
-
                 {sessions.map((session) => {
-
                   const current = isCurrentSession(session);
                   const revoked = session.is_revoked === true;
 
                   return (
                     <tr key={session.id}>
-
                       {/* DEVICE */}
 
                       <td>
                         <div className="session-device">
-
-                          <div className="device-icon">
-                            💻
-                          </div>
+                          <div className="device-icon">💻</div>
 
                           <div className="device-info">
-
-                            <strong>
-                              {getDeviceName(session)}
-                            </strong>
+                            <strong>{getDeviceName(session)}</strong>
 
                             <span>
                               {current && (
@@ -365,12 +336,8 @@ function AdminSessionManagement() {
                               )}
                             </span>
 
-                            <small>
-                              {getBrowserInfo(session)}
-                            </small>
-
+                            <small>{getBrowserInfo(session)}</small>
                           </div>
-
                         </div>
                       </td>
 
@@ -384,15 +351,11 @@ function AdminSessionManagement() {
 
                       {/* LOGIN TIME */}
 
-                      <td>
-                        {formatDate(session.created_at)}
-                      </td>
+                      <td>{formatDate(session.created_at)}</td>
 
                       {/* LAST ACTIVITY */}
 
-                      <td>
-                        {formatDate(session.last_activity_at)}
-                      </td>
+                      <td>{formatDate(session.last_activity_at)}</td>
 
                       {/* STATUS */}
 
@@ -409,7 +372,6 @@ function AdminSessionManagement() {
                       {/* ACTION */}
 
                       <td>
-
                         {current ? (
                           <span className="current-session-text">
                             Current Session
@@ -427,22 +389,14 @@ function AdminSessionManagement() {
                             Revoke
                           </button>
                         )}
-
                       </td>
-
                     </tr>
                   );
-
                 })}
-
               </tbody>
-
             </table>
-
           </div>
-
         )}
-
       </div>
 
       {/* SECURITY INFORMATION */}
@@ -464,7 +418,6 @@ function AdminSessionManagement() {
       {/* REVOKE CONFIRMATION MODAL */}
 
       {selectedSession && (
-
         <div
           className="session-modal-overlay"
           onClick={() => {
@@ -473,32 +426,22 @@ function AdminSessionManagement() {
             }
           }}
         >
-
           <div
             className="session-confirm-modal"
             onClick={(event) => event.stopPropagation()}
           >
-
-            <div className="modal-warning-icon">
-              ⚠️
-            </div>
+            <div className="modal-warning-icon">⚠️</div>
 
             <h2>Revoke Device Session?</h2>
 
-            <p>
-              Are you sure you want to logout this device?
-            </p>
+            <p>Are you sure you want to logout this device?</p>
 
             <div className="modal-device-info">
-
-              <strong>
-                {getDeviceName(selectedSession)}
-              </strong>
+              <strong>{getDeviceName(selectedSession)}</strong>
 
               <span>
                 {selectedSession.ip_address || "IP not available"}
               </span>
-
             </div>
 
             <p className="modal-warning-text">
@@ -508,7 +451,6 @@ function AdminSessionManagement() {
             </p>
 
             <div className="modal-actions">
-
               <button
                 className="modal-cancel-btn"
                 onClick={() => setSelectedSession(null)}
@@ -526,15 +468,10 @@ function AdminSessionManagement() {
                   ? "Revoking..."
                   : "Yes, Revoke Session"}
               </button>
-
             </div>
-
           </div>
-
         </div>
-
       )}
-
     </div>
   );
 }
