@@ -117,29 +117,24 @@ function SecurityManagement() {
   // LOAD USERS
   // =====================================================
 
-  const loadUsers = async () => {
-    setLoading(true);
-    setError("");
+const loadUsers = React.useCallback(async () => {
+  setLoading(true);
+  setError("");
 
-    try {
-      const data = await apiRequest("/users");
+  try {
+    const data = await apiRequest("/users");
 
-      if (!Array.isArray(data.users)) {
-        throw new Error("Invalid users response from server.");
-      }
-
-      setUsers(data.users);
-    } catch (err) {
-      setError(err.message || "Unable to load players.");
-    } finally {
-      setLoading(false);
+    if (!Array.isArray(data.users)) {
+      throw new Error("Invalid users response from server.");
     }
-  };
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
+    setUsers(data.users);
+  } catch (err) {
+    setError(err.message || "Unable to load players.");
+  } finally {
+    setLoading(false);
+  }
+}, []);
   // =====================================================
   // LOAD PLAYER DEVICES
   // =====================================================

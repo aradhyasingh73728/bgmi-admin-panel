@@ -659,9 +659,7 @@ const RoomManagement = () => {
   // SELECTED TOURNAMENT
   // ----------------------------------------------------------
 
-  const selectedRoom = selectedTournament
-    ? roomMap[selectedTournament.id]
-    : null;
+ 
 
 
   // ============================================================

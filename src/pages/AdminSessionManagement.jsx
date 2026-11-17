@@ -187,9 +187,6 @@ function AdminSessionManagement() {
     return session.user_agent || "Unknown Browser";
   };
 
-  const getSessionStatus = (session) => {
-    return session.is_revoked === true ? "Revoked" : "Active";
-  };
 
   const isCurrentSession = (session) => {
     return (
