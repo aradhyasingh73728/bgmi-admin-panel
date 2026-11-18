@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import axios from "axios";
 
@@ -15,7 +14,7 @@ const DEPOSIT_API_BASE =
     : "https://deposit-and-join-tournament-server-5002.onrender.com";
 
 // ==========================================
-// ADMIN JWT AUTH CONFIG (PORT 5001 ONLY)
+// ADMIN JWT AUTH CONFIG (PORT 5001 + 5002)
 // ==========================================
 
 const getAdminAuthConfig = () => {
@@ -124,11 +123,11 @@ const RegisterUsers = () => {
         `${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`
       );
 
-      // IMPORTANT:
-      // Existing Port 5002 request intentionally unchanged.
+      // ✅ CHANGED: deposit server ab admin token maangta hai.
       // Wallet balance safe rahega.
       const res = await axios.delete(
-        `${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`
+        `${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`,
+        getAdminAuthConfig()
       );
 
       console.log("✅ DEPOSIT SERVER RESPONSE:", res.data);
@@ -155,7 +154,7 @@ const RegisterUsers = () => {
       alert(
         `❌ Failed to clear history\nStatus: ${
           err.response?.status || "Unknown"
-        }`
+        }\n${err.response?.data?.message || err.message || ""}`
       );
     }
   };

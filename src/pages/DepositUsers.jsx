@@ -6,11 +6,30 @@ const API =
     ? "http://localhost:5002"
     : "https://deposit-and-join-tournament-server-5002.onrender.com";
 
+/* ============================= ADMIN TOKEN ============================= */
+// ✅ CHANGED: AdminLogin token ko "adminToken" naam se save karta hai
+const getAdminHeaders = (withJson = false) => {
+  const token = String(localStorage.getItem("adminToken") || "").trim();
+
+  if (!token) return null;
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  if (withJson) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  return headers;
+};
+
 const DepositUsers = () => {
   const [deposits, setDeposits] = useState([]);
   const [filter, setFilter] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [processingId, setProcessingId] = useState(null);
 
   /* ============================= DATE FORMAT (INDIA) ============================= */
   const formatIndianDate = (dateString) => {
@@ -37,7 +56,22 @@ const DepositUsers = () => {
       setLoading(true);
       setError("");
 
-      const res = await fetch(`${API}/api/admin/deposits`);
+      const headers = getAdminHeaders();
+
+      if (!headers) {
+        setDeposits([]);
+        setError("Admin token missing. Please login again.");
+        return;
+      }
+
+      const res = await fetch(`${API}/api/admin/deposits`, { headers });
+
+      if (res.status === 401 || res.status === 403) {
+        setDeposits([]);
+        setError("Admin session expired. Please login again.");
+        return;
+      }
+
       if (!res.ok) throw new Error("Fetch failed");
 
       const data = await res.json();
@@ -54,40 +88,110 @@ const DepositUsers = () => {
   }, [fetchDeposits]);
 
   /* ============================= UPDATE STATUS (API CALL) ============================= */
-  const updateStatus = async (id, status) => {
+  const updateStatus = async (deposit, status) => {
+    if (processingId) return;
+
+    const headers = getAdminHeaders(true);
+
+    if (!headers) {
+      alert("Admin token missing. Please login again.");
+      return;
+    }
+
+    let reason = "";
+
+    if (status === "approved") {
+      const ok = window.confirm(
+        `Approve ₹${deposit.amount} for ${deposit.profile_id}?\n` +
+          `UTR: ${deposit.utr}\n\n` +
+          `Pehle bank statement me ye payment check kar lo.`
+      );
+
+      if (!ok) return;
+    } else {
+      const input = window.prompt(
+        `Reject ₹${deposit.amount} (UTR: ${deposit.utr})?\n\nReason (optional):`,
+        ""
+      );
+
+      // Cancel dabaya to kuch mat karo
+      if (input === null) return;
+
+      reason = input.trim();
+    }
+
     try {
-      const res = await fetch(`${API}/api/admin/deposit-status/${id}`, {
+      setProcessingId(deposit.id);
+
+      const res = await fetch(`${API}/api/admin/deposit-status/${deposit.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status })
+        headers,
+        body: JSON.stringify({ status, reason }),
       });
 
-      if (res.ok) {
-        fetchDeposits(); // Refresh data from Supabase
+      let data = null;
+
+      try {
+        data = await res.json();
+      } catch (jsonError) {
+        data = null;
+      }
+
+      if (res.ok && data?.success) {
+        await fetchDeposits(); // Refresh data from Supabase
       } else {
-        alert("Update failed");
+        alert(data?.message || "Update failed");
+
+        // Already processed ho chuka hai to list refresh kar do
+        if (res.status === 409) {
+          fetchDeposits();
+        }
       }
     } catch (err) {
       alert("Network error");
+    } finally {
+      setProcessingId(null);
     }
   };
 
   /* ============================= DELETE DEPOSIT (API CALL) ============================= */
   const deleteDeposit = async (id) => {
+    if (processingId) return;
+
     if (!window.confirm("Are you sure you want to delete this deposit?")) return;
 
+    const headers = getAdminHeaders();
+
+    if (!headers) {
+      alert("Admin token missing. Please login again.");
+      return;
+    }
+
     try {
+      setProcessingId(id);
+
       const res = await fetch(`${API}/api/admin/deposit/${id}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers,
       });
 
       if (res.ok) {
-        fetchDeposits(); // Refresh data from Supabase
+        await fetchDeposits(); // Refresh data from Supabase
       } else {
-        alert("Delete failed");
+        let data = null;
+
+        try {
+          data = await res.json();
+        } catch (jsonError) {
+          data = null;
+        }
+
+        alert(data?.message || "Delete failed");
       }
     } catch (err) {
       alert("Network error");
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -156,30 +260,42 @@ const DepositUsers = () => {
                 <td>
                   {d.status === "pending" ? (
                     <>
-                      <button 
-                        onClick={() => updateStatus(d.id, "approved")}
-                        style={{ marginRight: 5, background: '#4CAF50' }}
+                      <button
+                        disabled={processingId !== null}
+                        onClick={() => updateStatus(d, "approved")}
+                        style={{
+                          marginRight: 5,
+                          background: "#4CAF50",
+                          opacity: processingId !== null ? 0.6 : 1,
+                        }}
                       >
                         ✅ Approve
                       </button>
-                      <button 
-                        onClick={() => updateStatus(d.id, "rejected")}
-                        style={{ marginRight: 5, background: '#f44336' }}
+                      <button
+                        disabled={processingId !== null}
+                        onClick={() => updateStatus(d, "rejected")}
+                        style={{
+                          marginRight: 5,
+                          background: "#f44336",
+                          opacity: processingId !== null ? 0.6 : 1,
+                        }}
                       >
                         ❌ Reject
                       </button>
                     </>
                   ) : (
                     <>
-                      <button 
+                      <button
+                        disabled={processingId !== null}
                         onClick={() => deleteDeposit(d.id)}
-                        style={{ 
-                          color: 'red', 
-                          background: 'none', 
-                          border: '1px solid red',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
+                        style={{
+                          color: "red",
+                          background: "none",
+                          border: "1px solid red",
+                          padding: "4px 8px",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          opacity: processingId !== null ? 0.6 : 1,
                         }}
                       >
                         🗑️ Delete

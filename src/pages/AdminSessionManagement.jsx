@@ -6,7 +6,7 @@ import "./AdminSessionManagement.css";
 // ==================================================
 
 
-const API_BASE = import.meta.env.DEV
+const API_BASE = process.env.NODE_ENV === "development"
   ? "http://localhost:5004/api/admin"
   : "https://bgmi-admin-dashboard-server-5004.onrender.com/api/admin";
 
