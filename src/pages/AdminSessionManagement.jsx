@@ -5,7 +5,11 @@ import "./AdminSessionManagement.css";
 // API CONFIGURATION
 // ==================================================
 
-const API_BASE = "http://localhost:5004/api/admin";
+
+const API_BASE = import.meta.env.DEV
+  ? "http://localhost:5004/api/admin"
+  : "https://bgmi-admin-dashboard-server-5004.onrender.com/api/admin";
+
 
 // ==================================================
 // ADMIN SESSION MANAGEMENT

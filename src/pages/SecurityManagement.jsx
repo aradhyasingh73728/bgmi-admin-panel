@@ -2,8 +2,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./SecurityManagement.css";
 
-const API_BASE = "http://localhost:5004/api/admin";
-const ADMIN_AUTH_API = "http://localhost:5000/admin";
+
+const API_BASE = import.meta.env.DEV
+  ? "http://localhost:5004/api/admin"
+  : "https://bgmi-admin-dashboard-server-5004.onrender.com/api/admin";
+
+const ADMIN_AUTH_API = import.meta.env.DEV
+  ? "http://localhost:5000/admin"
+  : "https://admin-login-server-5000.onrender.com/admin";
+
 
 function SecurityManagement() {
   const [users, setUsers] = useState([]);
