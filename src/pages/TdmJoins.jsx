@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useMemo } from "react";
 import "./TdmJoins.css";
 
@@ -22,6 +23,7 @@ const TdmJoins = () => {
 
     joins.forEach((join) => {
       const tournamentKey = String(join.tournament_id ?? "");
+
       if (!(tournamentKey in firstMap)) {
         firstMap[tournamentKey] = join.id;
       }
@@ -46,6 +48,7 @@ const TdmJoins = () => {
     }
 
     let data = {};
+
     try {
       data = await response.json();
     } catch {
@@ -53,8 +56,6 @@ const TdmJoins = () => {
     }
 
     if (!response.ok) {
-      // Use a consistent English message rather than displaying a possibly
-      // localized backend/browser error directly.
       throw new Error(
         response.status >= 500
           ? `The server encountered an error (HTTP ${response.status}). Please try again.`
@@ -78,6 +79,7 @@ const TdmJoins = () => {
       setJoins(joinsData);
 
       const roomMap = {};
+
       joinsData.forEach((join) => {
         const tournamentKey = String(join.tournament_id ?? "");
 
@@ -92,7 +94,12 @@ const TdmJoins = () => {
       setRooms(roomMap);
     } catch (error) {
       console.error("Fetch admin joins error:", error);
-      showMessage("error", error.message || "Unable to load tournament joins.");
+
+      showMessage(
+        "error",
+        error.message || "Unable to load tournament joins."
+      );
+
       setJoins([]);
     } finally {
       if (showLoader) setLoading(false);
@@ -118,10 +125,17 @@ const TdmJoins = () => {
 
   const saveRoom = async (tournamentId) => {
     const key = String(tournamentId);
-    const roomData = rooms[key] || { roomId: "", roomPassword: "" };
+
+    const roomData = rooms[key] || {
+      roomId: "",
+      roomPassword: "",
+    };
 
     if (!roomData.roomId.trim() && !roomData.roomPassword.trim()) {
-      showMessage("error", "Enter a Room ID or Room Password before saving.");
+      showMessage(
+        "error",
+        "Enter a Room ID or Room Password before saving."
+      );
       return;
     }
 
@@ -133,7 +147,9 @@ const TdmJoins = () => {
         `${API_URL}/api/admin/set-room-by-tournament`,
         {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
             tournamentId,
             roomId: roomData.roomId.trim(),
@@ -145,6 +161,7 @@ const TdmJoins = () => {
       showMessage(
         "success",
         typeof data.message === "string" &&
+          // eslint-disable-next-line no-control-regex
           /^[\x00-\x7F]*$/.test(data.message)
           ? data.message
           : "Room details saved successfully."
@@ -153,7 +170,11 @@ const TdmJoins = () => {
       await fetchData(false);
     } catch (error) {
       console.error("Save room error:", error);
-      showMessage("error", error.message || "Unable to save room details.");
+
+      showMessage(
+        "error",
+        error.message || "Unable to save room details."
+      );
     } finally {
       setSavingTournamentId("");
     }
@@ -168,7 +189,9 @@ const TdmJoins = () => {
 
       await requestJson(`${API_URL}/api/admin/set-room-by-tournament`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           tournamentId,
           roomId: "",
@@ -177,10 +200,15 @@ const TdmJoins = () => {
       });
 
       showMessage("success", "Room details cleared successfully.");
+
       await fetchData(false);
     } catch (error) {
       console.error("Clear room error:", error);
-      showMessage("error", error.message || "Unable to clear room details.");
+
+      showMessage(
+        "error",
+        error.message || "Unable to clear room details."
+      );
     } finally {
       setSavingTournamentId("");
     }
@@ -189,7 +217,8 @@ const TdmJoins = () => {
   const askDeleteUser = (join) => {
     setConfirmDelete({
       id: join.id,
-      playerName: join.player_name || join.profile_name || "this player",
+      playerName:
+        join.player_name || join.profile_name || "this player",
     });
   };
 
@@ -203,15 +232,26 @@ const TdmJoins = () => {
       setMessage(null);
       setConfirmDelete(null);
 
-      await requestJson(`${API_URL}/api/admin/tournament/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
+      await requestJson(
+        `${API_URL}/api/admin/tournament/${encodeURIComponent(id)}`,
+        {
+          method: "DELETE",
+        }
+      );
 
-      showMessage("success", "Tournament join record deleted successfully.");
+      showMessage(
+        "success",
+        "Tournament join record deleted successfully."
+      );
+
       await fetchData(false);
     } catch (error) {
       console.error("Delete user error:", error);
-      showMessage("error", error.message || "Unable to delete this join record.");
+
+      showMessage(
+        "error",
+        error.message || "Unable to delete this join record."
+      );
     } finally {
       setDeletingId("");
     }
@@ -237,18 +277,28 @@ const TdmJoins = () => {
       <div className="tdm-joins-container">
         <header className="tdm-joins-header">
           <div>
-            <span className="tdm-joins-eyebrow">BGMI ESPORTS ADMIN PANEL</span>
+            <span className="tdm-joins-eyebrow">
+              BGMI ESPORTS ADMIN PANEL
+            </span>
+
             <h1>
               TOURNAMENT <span>JOINS</span>
             </h1>
-            <p>Manage registered players and tournament room credentials.</p>
+
+            <p>
+              Manage registered players and tournament room credentials.
+            </p>
           </div>
 
           <button
             type="button"
             className="tdm-refresh-btn"
             onClick={() => fetchData(true)}
-            disabled={loading || Boolean(savingTournamentId) || Boolean(deletingId)}
+            disabled={
+              loading ||
+              Boolean(savingTournamentId) ||
+              Boolean(deletingId)
+            }
           >
             ↻ Refresh Data
           </button>
@@ -256,11 +306,16 @@ const TdmJoins = () => {
 
         <section className="tdm-joins-stats">
           <article className="tdm-stat-card">
-            <span className="tdm-stat-label">Total Joined Players</span>
+            <span className="tdm-stat-label">
+              Total Joined Players
+            </span>
             <strong>{totalPlayers}</strong>
           </article>
+
           <article className="tdm-stat-card">
-            <span className="tdm-stat-label">Total Tournaments</span>
+            <span className="tdm-stat-label">
+              Total Tournaments
+            </span>
             <strong>{totalTournaments}</strong>
           </article>
         </section>
@@ -271,6 +326,7 @@ const TdmJoins = () => {
             role={message.type === "error" ? "alert" : "status"}
           >
             <span>{message.text}</span>
+
             <button
               type="button"
               onClick={() => setMessage(null)}
@@ -285,9 +341,14 @@ const TdmJoins = () => {
           <div className="tdm-table-heading">
             <div>
               <h2>Player Registrations</h2>
-              <p>Room credentials are managed once per tournament.</p>
+              <p>
+                Room credentials are managed once per tournament.
+              </p>
             </div>
-            <span className="tdm-record-count">{joins.length} Records</span>
+
+            <span className="tdm-record-count">
+              {joins.length} Records
+            </span>
           </div>
 
           <div className="tdm-table-wrap">
@@ -318,30 +379,58 @@ const TdmJoins = () => {
 
               <tbody>
                 {joins.map((join, index) => {
-                  const tournamentKey = String(join.tournament_id ?? "");
+                  const tournamentKey = String(
+                    join.tournament_id ?? ""
+                  );
+
                   const isPrimaryRow =
                     groupedFirstRowMap[tournamentKey] === join.id;
-                  const isSaving = savingTournamentId === tournamentKey;
-                  const isDeleting = deletingId === String(join.id);
+
+                  const isSaving =
+                    savingTournamentId === tournamentKey;
+
+                  const isDeleting =
+                    deletingId === String(join.id);
 
                   return (
                     <tr key={join.id}>
                       <td>{index + 1}</td>
+
                       <td>{join.profile_name || "N/A"}</td>
                       <td>{join.profile_id || "N/A"}</td>
                       <td>{join.tournament_id || "N/A"}</td>
+
                       <td className="tdm-tournament-name">
                         {join.tournament_name || "N/A"}
                       </td>
+
                       <td>{join.player_name || "N/A"}</td>
                       <td>{join.bgmi_id || "N/A"}</td>
-                      <td>₹{Number(join.entry_fee || 0).toLocaleString("en-IN")}</td>
-                      <td>₹{Number(join.prize_pool || 0).toLocaleString("en-IN")}</td>
+
+                      <td>
+                        ₹
+                        {Number(join.entry_fee || 0).toLocaleString(
+                          "en-IN"
+                        )}
+                      </td>
+
+                      <td>
+                        ₹
+                        {Number(join.prize_pool || 0).toLocaleString(
+                          "en-IN"
+                        )}
+                      </td>
+
                       <td>{join.mode || "Battle Royal"}</td>
                       <td>{join.map || "N/A"}</td>
-                      <td className="tdm-capitalize">{join.team_type || "N/A"}</td>
+
+                      <td className="tdm-capitalize">
+                        {join.team_type || "N/A"}
+                      </td>
+
                       <td>
-                        {join.per_kill !== null && join.per_kill !== undefined
+                        {join.per_kill !== null &&
+                        join.per_kill !== undefined
                           ? `₹${join.per_kill}`
                           : "N/A"}
                       </td>
@@ -350,7 +439,9 @@ const TdmJoins = () => {
                         <input
                           className="tdm-room-input"
                           type="text"
-                          value={rooms[tournamentKey]?.roomId || ""}
+                          value={
+                            rooms[tournamentKey]?.roomId || ""
+                          }
                           onChange={(event) =>
                             updateRoomField(
                               join.tournament_id,
@@ -360,7 +451,10 @@ const TdmJoins = () => {
                           }
                           placeholder="Room ID"
                           aria-label={`Room ID for tournament ${tournamentKey}`}
-                          disabled={!isPrimaryRow || Boolean(savingTournamentId)}
+                          disabled={
+                            !isPrimaryRow ||
+                            Boolean(savingTournamentId)
+                          }
                         />
                       </td>
 
@@ -368,7 +462,9 @@ const TdmJoins = () => {
                         <input
                           className="tdm-room-input"
                           type="text"
-                          value={rooms[tournamentKey]?.roomPassword || ""}
+                          value={
+                            rooms[tournamentKey]?.roomPassword || ""
+                          }
                           onChange={(event) =>
                             updateRoomField(
                               join.tournament_id,
@@ -378,13 +474,18 @@ const TdmJoins = () => {
                           }
                           placeholder="Password"
                           aria-label={`Room password for tournament ${tournamentKey}`}
-                          disabled={!isPrimaryRow || Boolean(savingTournamentId)}
+                          disabled={
+                            !isPrimaryRow ||
+                            Boolean(savingTournamentId)
+                          }
                         />
                       </td>
 
                       <td>
                         {join.joined_at
-                          ? new Date(join.joined_at).toLocaleString("en-IN")
+                          ? new Date(
+                              join.joined_at
+                            ).toLocaleString("en-IN")
                           : "N/A"}
                       </td>
 
@@ -392,8 +493,13 @@ const TdmJoins = () => {
                         <button
                           type="button"
                           className="tdm-action-btn save"
-                          onClick={() => saveRoom(join.tournament_id)}
-                          disabled={!isPrimaryRow || Boolean(savingTournamentId)}
+                          onClick={() =>
+                            saveRoom(join.tournament_id)
+                          }
+                          disabled={
+                            !isPrimaryRow ||
+                            Boolean(savingTournamentId)
+                          }
                           title={
                             isPrimaryRow
                               ? "Save room details"
@@ -408,8 +514,13 @@ const TdmJoins = () => {
                         <button
                           type="button"
                           className="tdm-action-btn clear"
-                          onClick={() => clearRoom(join.tournament_id)}
-                          disabled={!isPrimaryRow || Boolean(savingTournamentId)}
+                          onClick={() =>
+                            clearRoom(join.tournament_id)
+                          }
+                          disabled={
+                            !isPrimaryRow ||
+                            Boolean(savingTournamentId)
+                          }
                           title={
                             isPrimaryRow
                               ? "Clear room details"
@@ -440,7 +551,9 @@ const TdmJoins = () => {
                     <td className="tdm-no-data" colSpan={19}>
                       <span>📭</span>
                       <strong>No tournament joins found</strong>
-                      <small>Player registrations will appear here.</small>
+                      <small>
+                        Player registrations will appear here.
+                      </small>
                     </td>
                   </tr>
                 )}
@@ -451,6 +564,7 @@ const TdmJoins = () => {
 
         <details className="tdm-debug-panel">
           <summary>Debug Information</summary>
+
           <pre>
             {JSON.stringify(
               {
@@ -483,12 +597,17 @@ const TdmJoins = () => {
             aria-labelledby="tdm-confirm-title"
           >
             <div className="tdm-confirm-icon">!</div>
-            <h2 id="tdm-confirm-title">Delete Join Record?</h2>
+
+            <h2 id="tdm-confirm-title">
+              Delete Join Record?
+            </h2>
+
             <p>
               Are you sure you want to delete the join record for{" "}
-              <strong>{confirmDelete.playerName}</strong>? This action cannot be
-              undone.
+              <strong>{confirmDelete.playerName}</strong>? This action
+              cannot be undone.
             </p>
+
             <div className="tdm-confirm-actions">
               <button
                 type="button"
@@ -497,6 +616,7 @@ const TdmJoins = () => {
               >
                 Cancel
               </button>
+
               <button
                 type="button"
                 className="tdm-confirm-delete-btn"
