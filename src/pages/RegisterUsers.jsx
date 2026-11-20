@@ -1,22 +1,20 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import "./RegisterUsers.css";
 
-// 🔥 USER SERVER (5001) - registeruser table
+// USER SERVER (5001)
 const API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5001"
     : "https://user-register-server-5001.onrender.com";
 
-// 🔥 DEPOSIT SERVER (5002) - DepositUser table
+// DEPOSIT SERVER (5002)
 const DEPOSIT_API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5002"
     : "https://deposit-and-join-tournament-server-5002.onrender.com";
 
-// ==========================================
-// ADMIN JWT AUTH CONFIG (PORT 5001 + 5002)
-// ==========================================
-
+// ADMIN JWT AUTH
 const getAdminAuthConfig = () => {
   const token = localStorage.getItem("adminToken");
 
@@ -31,15 +29,41 @@ const getAdminAuthConfig = () => {
   };
 };
 
+const formatDate = (dateValue) => {
+  if (!dateValue) return "—";
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) return "Invalid date";
+
+  return date.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  });
+};
+
 const RegisterUsers = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  /* ===============================
-    LOAD USERS FROM SERVER (5001)
-  =============================== */
+  const showToast = (message, type = "success") => {
+    setToast({
+      message,
+      type,
+      id: Date.now(),
+    });
+  };
 
+  // LOAD USERS FROM SERVER 5001
   const loadUsers = async () => {
     try {
       setLoading(true);
@@ -70,11 +94,9 @@ const RegisterUsers = () => {
         name: u.username,
         email: u.email,
         userPassword: u["User Password"] || "******",
-        balance: u.balance || 0,
+        balance: Number(u.balance) || 0,
         register_time_ist: u.register_time_ist,
-        createdAt: u.register_time_ist
-          ? new Date(u.register_time_ist + " Asia/Kolkata")
-          : new Date(u.createdAt),
+        createdAt: u.register_time_ist || u.createdAt,
       }));
 
       setUsers(list);
@@ -100,31 +122,11 @@ const RegisterUsers = () => {
     }
   };
 
-  /* ===============================
-    CLEAR APPROVED DEPOSITS
-    PORT 5002 - WALLET SAFE!
-  =============================== */
-
+  // CLEAR APPROVED DEPOSITS - SERVER 5002
   const clearApprovedHistory = async (profileId) => {
-    // eslint-disable-next-line no-restricted-globals
-    if (
-  !window.confirm(
-    `Clear APPROVED deposits for ${profileId}?\n\n✅ Wallet balance SAME rahega!\n💰 Sirf DepositUser history saaf hogi`
-  )
-) {
-  return;
-}
-
     try {
       console.log("🧹 Clearing approved history for:", profileId);
 
-      console.log(
-        "📡 Calling DEPOSIT SERVER (5002):",
-        `${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`
-      );
-
-      // ✅ CHANGED: deposit server ab admin token maangta hai.
-      // Wallet balance safe rahega.
       const res = await axios.delete(
         `${DEPOSIT_API_BASE}/api/admin/clear-approved/${profileId}`,
         getAdminAuthConfig()
@@ -132,16 +134,18 @@ const RegisterUsers = () => {
 
       console.log("✅ DEPOSIT SERVER RESPONSE:", res.data);
 
-      if (res.data.success) {
-        // eslint-disable-next-line no-restricted-globals
-        alert(
-          `✅ ${res.data.cleared || 0} approved deposits cleared!\n💰 Wallet balance safe!`
+      if (res.data?.success) {
+        showToast(
+          `${res.data.cleared || 0} approved deposits cleared. Wallet balance was not changed by this request.`,
+          "success"
         );
 
-        loadUsers();
+        await loadUsers();
       } else {
-        // eslint-disable-next-line no-restricted-globals
-        alert("❌ Server returned error response");
+        showToast(
+          res.data?.message || "Server returned an unsuccessful response.",
+          "error"
+        );
       }
     } catch (err) {
       console.error(
@@ -150,48 +154,73 @@ const RegisterUsers = () => {
         err.response?.data || err.message
       );
 
-      // eslint-disable-next-line no-restricted-globals
-      alert(
-        `❌ Failed to clear history\nStatus: ${
-          err.response?.status || "Unknown"
-        }\n${err.response?.data?.message || err.message || ""}`
+      showToast(
+        `Clear failed: ${
+          err.response?.data?.message ||
+          err.response?.data?.error ||
+          err.message ||
+          "Please try again"
+        }`,
+        "error"
       );
     }
   };
 
-  /* ===============================
-    DELETE USER (5001 SERVER)
-  =============================== */
-
+  // DELETE USER - SERVER 5001
   const handleDelete = async (id) => {
-    // eslint-disable-next-line no-restricted-globals
-    if (!window.confirm("Delete this BGMI player permanently?")) {
-      return;
-    }
-
     try {
       await axios.delete(
         `${API_BASE}/api/admin/users/${id}`,
         getAdminAuthConfig()
       );
 
-      await loadUsers();
-
       console.log("🗑️ User deleted:", id);
+
+      showToast("Player deleted successfully.", "success");
+
+      await loadUsers();
     } catch (err) {
       console.error(
         "Delete error:",
         err.response?.data || err.message
       );
 
-      setError(
+      showToast(
         `Delete failed: ${
           err.response?.data?.message ||
           err.response?.data?.error ||
           err.message ||
           "Please try again"
-        }`
+        }`,
+        "error"
       );
+    }
+  };
+
+  // OPEN CUSTOM CONFIRMATION
+  const requestAction = (type, user) => {
+    setPendingAction({ type, user });
+  };
+
+  // CONFIRM ACTION
+  const executePendingAction = async () => {
+    if (!pendingAction || actionLoading) return;
+
+    const action = pendingAction;
+
+    setPendingAction(null);
+    setActionLoading(true);
+
+    try {
+      if (action.type === "clear") {
+        await clearApprovedHistory(action.user.profileId);
+      }
+
+      if (action.type === "delete") {
+        await handleDelete(action.user.id);
+      }
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -199,263 +228,340 @@ const RegisterUsers = () => {
     loadUsers();
   }, []);
 
+  // AUTO-HIDE TOAST
+  useEffect(() => {
+    if (!toast) return;
+
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const isClearAction = pendingAction?.type === "clear";
+
   return (
-    <div className="page">
-      <div className="page-header">
-        <h2 className="page-title">
-          👥 BGMI ESPORTS – Registered Players
-        </h2>
-
-        <p className="page-subtitle">
-          Admin View - {users.length} Players Total
-        </p>
-
-        <button
-          onClick={loadUsers}
-          className="btn-refresh"
-          style={{
-            padding: "8px 16px",
-            background: "#28a745",
-            color: "white",
-            border: "none",
-            borderRadius: "6px",
-            cursor: "pointer",
-          }}
+    <div className="register-page">
+      {/* TOAST NOTIFICATION */}
+      {toast && (
+        <div
+          className={`register-toast ${toast.type}`}
+          role="status"
+          key={toast.id}
         >
-          🔄 Refresh
-        </button>
-      </div>
+          <span className="register-toast-icon">
+            {toast.type === "success" ? "✓" : "!"}
+          </span>
 
+          <span className="register-toast-message">
+            {toast.message}
+          </span>
+
+          <button
+            type="button"
+            className="register-toast-close"
+            onClick={() => setToast(null)}
+            aria-label="Close notification"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* PAGE HEADER */}
+      <header className="register-header">
+        <div className="register-heading">
+          <div className="register-eyebrow">
+            <span className="register-eyebrow-line" />
+            ESPORTS CONTROL CENTER
+          </div>
+
+          <h1>
+            Registered <span>Players</span>
+          </h1>
+
+          <p>
+            Manage BGMI player accounts, wallet information and registration
+            records.
+          </p>
+        </div>
+
+        <div className="register-header-actions">
+          <div className="register-player-count">
+            <span className="register-count-icon">♟</span>
+            <div>
+              <strong>{users.length}</strong>
+              <small>TOTAL PLAYERS</small>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="register-refresh-btn"
+            onClick={loadUsers}
+            disabled={loading}
+          >
+            <span className={loading ? "refresh-spinning" : ""}>↻</span>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      </header>
+
+      {/* ERROR MESSAGE */}
       {error && (
-        <div
-          style={{
-            background: "#fee",
-            color: "#c53030",
-            padding: "12px",
-            borderRadius: "6px",
-            marginBottom: "20px",
-            borderLeft: "4px solid #f56565",
-          }}
-        >
-          ❌ {error}
-          <br />
-          <small>Make sure BGMI backend is running</small>
+        <div className="register-error">
+          <span className="register-error-icon">!</span>
+
+          <div className="register-error-content">
+            <strong>Unable to load players</strong>
+            <p>{error}</p>
+            <small>Check your backend connection and admin login.</small>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadUsers}
+            className="register-error-retry"
+          >
+            Retry
+          </button>
         </div>
       )}
 
-      {loading && (
-        <div
-          style={{
-            background: "#ebf8ff",
-            color: "#2c5282",
-            padding: "20px",
-            borderRadius: "8px",
-            textAlign: "center",
-          }}
-        >
-          ⏳ Loading registered BGMI ESPORTS players...
+      {/* TABLE PANEL */}
+      <section className="register-panel">
+        <div className="register-panel-header">
+          <div>
+            <div className="register-panel-kicker">
+              <span className="register-live-dot" />
+              PLAYER DATABASE
+            </div>
+
+            <h2>All Registered Accounts</h2>
+
+            <p>Player details fetched from the registration server.</p>
+          </div>
+
+          <div className="register-table-count">
+            {users.length} RECORDS
+          </div>
         </div>
-      )}
 
-      <div className="table-container" style={{ overflowX: "auto" }}>
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            background: "white",
-            borderRadius: "8px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-          }}
+        {loading && users.length === 0 ? (
+          <div className="register-loading">
+            <div className="register-loader" />
+            <strong>Loading BGMI players...</strong>
+            <span>Connecting to player database</span>
+          </div>
+        ) : (
+          <div className="register-table-scroll">
+            <table className="register-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>PROFILE ID</th>
+                  <th>PLAYER</th>
+                  <th>EMAIL ADDRESS</th>
+                  <th className="center-cell">PASSWORD</th>
+                  <th className="center-cell">BALANCE</th>
+                  <th>REGISTER TIME</th>
+                  <th className="center-cell">ACTIONS</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id}>
+                    <td className="register-index">{user.index}</td>
+
+                    <td>
+                      <span className="register-profile-id">
+                        {user.profileId || "—"}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="register-player">
+                        <span className="register-player-avatar">
+                          {(user.name || "P").charAt(0).toUpperCase()}
+                        </span>
+
+                        <strong>{user.name || "Unknown Player"}</strong>
+                      </div>
+                    </td>
+
+                    <td className="register-email">
+                      {user.email || "—"}
+                    </td>
+
+                    <td className="center-cell">
+                      <span className="register-password">
+                        {user.userPassword}
+                      </span>
+                    </td>
+
+                    <td className="center-cell">
+                      <span
+                        className={`register-balance ${
+                          user.balance > 0 ? "has-balance" : ""
+                        }`}
+                      >
+                        ₹{user.balance.toLocaleString("en-IN")}
+                      </span>
+                    </td>
+
+                    <td className="register-date">
+                      {formatDate(user.createdAt)}
+                    </td>
+
+                    <td>
+                      <div className="register-actions">
+                        <button
+                          type="button"
+                          className="register-action-btn clear-btn"
+                          onClick={() => requestAction("clear", user)}
+                          disabled={actionLoading}
+                          title="Clear approved deposit history"
+                        >
+                          <span>⌫</span>
+                          Clear
+                        </button>
+
+                        <button
+                          type="button"
+                          className="register-action-btn edit-btn"
+                          disabled
+                          title="Coming soon"
+                        >
+                          <span>✎</span>
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          className="register-action-btn delete-btn"
+                          onClick={() => requestAction("delete", user)}
+                          disabled={actionLoading}
+                          title="Delete player permanently"
+                        >
+                          <span>×</span>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {!loading && users.length === 0 && (
+                  <tr>
+                    <td colSpan="8">
+                      <div className="register-empty">
+                        <div className="register-empty-icon">♟</div>
+                        <strong>No players found</strong>
+                        <p>
+                          Registered BGMI players will appear here.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={loadUsers}
+                          className="register-empty-refresh"
+                        >
+                          Refresh list
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="register-panel-footer">
+          <span>
+            <i className="register-footer-dot" />
+            DATABASE CONNECTION
+          </span>
+
+          <span>
+            SOURCE: <strong>USER SERVER · PORT 5001</strong>
+          </span>
+        </div>
+      </section>
+
+      {/* CUSTOM CONFIRMATION MODAL */}
+      {pendingAction && (
+        <div
+          className="register-modal-backdrop"
+          onClick={() => !actionLoading && setPendingAction(null)}
         >
-          <thead style={{ background: "#f7fafc" }}>
-            <tr>
-              <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
-                #
-              </th>
+          <div
+            className="register-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="register-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              className={`register-confirm-icon ${
+                isClearAction ? "confirm-clear" : "confirm-delete"
+              }`}
+            >
+              {isClearAction ? "⌫" : "!"}
+            </div>
 
-              <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
-                Profile ID
-              </th>
+            <div className="register-confirm-kicker">
+              ADMIN CONFIRMATION
+            </div>
 
-              <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
-                Name
-              </th>
+            <h2 id="register-confirm-title">
+              {isClearAction ? "Clear approved history?" : "Delete player?"}
+            </h2>
 
-              <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
-                Email
-              </th>
+            <p>
+              {isClearAction
+                ? `You are about to clear approved deposit history for ${pendingAction.user.profileId}. This request targets deposit history on server 5002.`
+                : `You are about to permanently delete ${pendingAction.user.name || "this player"} from the registration server.`}
+            </p>
 
-              <th style={{ padding: "12px 8px", textAlign: "center", fontWeight: "600" }}>
-                Password
-              </th>
-
-              <th style={{ padding: "12px 8px", textAlign: "center", fontWeight: "600" }}>
-                Balance
-              </th>
-
-              <th style={{ padding: "12px 8px", textAlign: "left", fontWeight: "600" }}>
-                Register Time
-              </th>
-
-              <th style={{ padding: "12px 8px", textAlign: "center", fontWeight: "600" }}>
-                Actions
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {users.map((u) => (
-              <tr
-                key={u.id}
-                style={{
-                  borderBottom: "1px solid #e2e8f0",
-                }}
-              >
-                <td style={{ padding: "12px 8px", fontWeight: "500" }}>
-                  {u.index}
-                </td>
-
-                <td style={{ padding: "12px 8px" }}>
-                  <strong
-                    style={{
-                      color: "#ff4444",
-                      fontFamily: "monospace",
-                      background: "#fff5f5",
-                      padding: "4px 8px",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    {u.profileId}
-                  </strong>
-                </td>
-
-                <td style={{ padding: "12px 8px", fontWeight: "600" }}>
-                  {u.name}
-                </td>
-
-                <td style={{ padding: "12px 8px" }}>
-                  <small style={{ color: "#666" }}>
-                    {u.email}
-                  </small>
-                </td>
-
-                <td style={{ padding: "12px 8px", textAlign: "center" }}>
-                  <small
-                    style={{
-                      color: "#000",
-                      fontFamily: "monospace",
-                    }}
-                  >
-                    {u.userPassword}
-                  </small>
-                </td>
-
-                <td
-                  style={{
-                    padding: "12px 8px",
-                    textAlign: "center",
-                    fontWeight: "bold",
-                    color: u.balance > 0 ? "#38a169" : "#666",
-                  }}
-                >
-                  ₹{u.balance.toLocaleString()}
-                </td>
-
-                <td style={{ padding: "12px 8px" }}>
-                  <small style={{ color: "#666" }}>
-                    {u.createdAt.toLocaleString("en-IN", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: true,
-                    })}
-                  </small>
-                </td>
-
-                <td style={{ padding: "12px 8px", textAlign: "center" }}>
-                  {/* CLEAR APPROVED HISTORY - PORT 5002 */}
-
-                  <button
-                    onClick={() => clearApprovedHistory(u.profileId)}
-                    style={{
-                      padding: "6px 10px",
-                      marginRight: "4px",
-                      background: "#FF5722",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "11px",
-                      fontWeight: "500",
-                    }}
-                    title="Clear only APPROVED deposits from 5002 server (Wallet safe)"
-                  >
-                    🧹 Clear Approved
-                  </button>
-
-                  <button
-                    className="btn-secondary"
-                    disabled
-                    title="Coming soon"
-                    style={{
-                      padding: "6px 12px",
-                      marginRight: "4px",
-                      background: "#cbd5e0",
-                      color: "#4a5568",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "not-allowed",
-                      fontSize: "12px",
-                    }}
-                  >
-                    ✏️ Edit
-                  </button>
-
-                  <button
-                    className="btn-danger"
-                    onClick={() => handleDelete(u.id)}
-                    style={{
-                      padding: "6px 12px",
-                      background: "#f56565",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                    }}
-                  >
-                    🗑️ Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-
-            {!loading && users.length === 0 && (
-              <tr>
-                <td
-                  colSpan="8"
-                  style={{
-                    padding: "60px",
-                    textAlign: "center",
-                    color: "#a0aec0",
-                  }}
-                >
-                  <div>
-                    👥 No BGMI players registered yet
-                    <br />
-
-                    <small style={{ fontSize: "14px" }}>
-                      Players will appear here after registration from frontend
-                    </small>
-                  </div>
-                </td>
-              </tr>
+            {isClearAction && (
+              <div className="register-wallet-note">
+                <span>i</span>
+                This action is intended to clear approved deposit history only.
+                Verify your backend endpoint behavior before confirming.
+              </div>
             )}
-          </tbody>
-        </table>
-      </div>
+
+            <div className="register-confirm-actions">
+              <button
+                type="button"
+                className="register-cancel-btn"
+                onClick={() => setPendingAction(null)}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className={`register-confirm-btn ${
+                  isClearAction ? "confirm-clear-btn" : "confirm-delete-btn"
+                }`}
+                onClick={executePendingAction}
+                disabled={actionLoading}
+              >
+                {actionLoading
+                  ? "Please wait..."
+                  : isClearAction
+                  ? "Yes, clear history"
+                  : "Yes, delete player"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

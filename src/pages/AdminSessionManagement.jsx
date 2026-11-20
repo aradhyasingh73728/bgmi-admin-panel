@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useState } from "react";
 import "./AdminSessionManagement.css";
 
@@ -5,11 +6,9 @@ import "./AdminSessionManagement.css";
 // API CONFIGURATION
 // ==================================================
 
-
-const API_BASE = process.env.NODE_ENV === "development"
+const API_BASE = import.meta.env.DEV
   ? "http://localhost:5004/api/admin"
   : "https://bgmi-admin-dashboard-server-5004.onrender.com/api/admin";
-
 
 // ==================================================
 // ADMIN SESSION MANAGEMENT
@@ -100,7 +99,7 @@ function AdminSessionManagement() {
   // ==================================================
 
   const revokeSession = async () => {
-    if (!selectedSession) {
+    if (!selectedSession || revokingId !== null) {
       return;
     }
 
@@ -207,7 +206,8 @@ function AdminSessionManagement() {
       <div className="admin-sessions-page">
         <div className="sessions-loading">
           <div className="sessions-spinner"></div>
-          <p>Loading Admin Sessions...</p>
+          <h3>Loading Admin Sessions</h3>
+          <p>Checking your admin devices and security status...</p>
         </div>
       </div>
     );
@@ -219,11 +219,19 @@ function AdminSessionManagement() {
 
   return (
     <div className="admin-sessions-page">
+
       {/* PAGE HEADER */}
 
       <div className="sessions-header">
-        <div>
-          <h1>Admin Sessions</h1>
+        <div className="sessions-heading">
+          <div className="sessions-eyebrow">
+            <span className="sessions-live-dot"></span>
+            SECURITY CONTROL CENTER
+          </div>
+
+          <h1>
+            Admin <span>Sessions</span>
+          </h1>
 
           <p>
             Manage logged-in devices and protect your admin account.
@@ -235,7 +243,8 @@ function AdminSessionManagement() {
           onClick={() => fetchSessions(true)}
           disabled={refreshing}
         >
-          {refreshing ? "Refreshing..." : "↻ Refresh Sessions"}
+          <span className={refreshing ? "refresh-spinning" : ""}>↻</span>
+          {refreshing ? "Refreshing..." : "Refresh Sessions"}
         </button>
       </div>
 
@@ -243,7 +252,16 @@ function AdminSessionManagement() {
 
       {error && (
         <div className="sessions-alert sessions-error">
-          ⚠️ {error}
+          <span className="alert-symbol">!</span>
+          <span>{error}</span>
+
+          <button
+            type="button"
+            onClick={() => setError("")}
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -251,60 +269,100 @@ function AdminSessionManagement() {
 
       {success && (
         <div className="sessions-alert sessions-success">
-          ✓ {success}
+          <span className="alert-symbol">✓</span>
+          <span>{success}</span>
+
+          <button
+            type="button"
+            onClick={() => setSuccess("")}
+            aria-label="Dismiss success"
+          >
+            ×
+          </button>
         </div>
       )}
 
       {/* STATISTICS */}
 
       <div className="sessions-stats">
-        <div className="session-stat-card">
-          <div className="stat-icon blue">💻</div>
 
-          <div>
+        <div className="session-stat-card total-stat">
+          <div className="stat-icon blue">▣</div>
+
+          <div className="stat-content">
+            <span className="stat-label">TOTAL SESSIONS</span>
             <h3>{sessions.length}</h3>
-            <p>Total Sessions</p>
+            <p>All registered devices</p>
           </div>
+
+          <div className="stat-card-decoration">01</div>
         </div>
 
-        <div className="session-stat-card">
+        <div className="session-stat-card active-stat">
           <div className="stat-icon green">✓</div>
 
-          <div>
+          <div className="stat-content">
+            <span className="stat-label">ACTIVE SESSIONS</span>
             <h3>{activeSessions.length}</h3>
-            <p>Active Sessions</p>
+            <p>Currently authorized</p>
           </div>
+
+          <div className="stat-card-decoration">02</div>
         </div>
 
-        <div className="session-stat-card">
+        <div className="session-stat-card revoked-stat">
           <div className="stat-icon red">⊗</div>
 
-          <div>
+          <div className="stat-content">
+            <span className="stat-label">REVOKED SESSIONS</span>
             <h3>{revokedSessions.length}</h3>
-            <p>Revoked Sessions</p>
+            <p>Access has been blocked</p>
           </div>
+
+          <div className="stat-card-decoration">03</div>
         </div>
+
       </div>
 
       {/* SESSION TABLE */}
 
       <div className="sessions-table-card">
+
         <div className="sessions-table-header">
-          <div>
+          <div className="table-heading-icon">⌘</div>
+
+          <div className="table-heading-content">
             <h2>Logged-in Devices</h2>
-            <p>View and manage all devices using your admin account.</p>
+            <p>
+              View and manage all devices using your admin account.
+            </p>
+          </div>
+
+          <div className="sessions-count">
+            {sessions.length} {sessions.length === 1 ? "DEVICE" : "DEVICES"}
           </div>
         </div>
 
         {sessions.length === 0 ? (
           <div className="sessions-empty">
-            <div>💻</div>
+            <div className="empty-device-icon">▣</div>
             <h3>No Sessions Found</h3>
-            <p>There are currently no admin sessions to display.</p>
+            <p>
+              There are currently no admin sessions to display.
+            </p>
+
+            <button
+              className="sessions-empty-refresh"
+              onClick={() => fetchSessions(true)}
+              disabled={refreshing}
+            >
+              ↻ Check Again
+            </button>
           </div>
         ) : (
           <div className="sessions-table-wrapper">
             <table className="sessions-table">
+
               <thead>
                 <tr>
                   <th>DEVICE</th>
@@ -323,22 +381,22 @@ function AdminSessionManagement() {
 
                   return (
                     <tr key={session.id}>
+
                       {/* DEVICE */}
 
                       <td>
                         <div className="session-device">
-                          <div className="device-icon">💻</div>
+                          <div className="device-icon">▣</div>
 
                           <div className="device-info">
                             <strong>{getDeviceName(session)}</strong>
 
-                            <span>
-                              {current && (
-                                <span className="current-device-badge">
-                                  Current Device
-                                </span>
-                              )}
-                            </span>
+                            {current && (
+                              <span className="current-device-badge">
+                                <span></span>
+                                Current Device
+                              </span>
+                            )}
 
                             <small>{getBrowserInfo(session)}</small>
                           </div>
@@ -355,11 +413,19 @@ function AdminSessionManagement() {
 
                       {/* LOGIN TIME */}
 
-                      <td>{formatDate(session.created_at)}</td>
+                      <td>
+                        <span className="session-date">
+                          {formatDate(session.created_at)}
+                        </span>
+                      </td>
 
                       {/* LAST ACTIVITY */}
 
-                      <td>{formatDate(session.last_activity_at)}</td>
+                      <td>
+                        <span className="session-date">
+                          {formatDate(session.last_activity_at)}
+                        </span>
+                      </td>
 
                       {/* STATUS */}
 
@@ -369,6 +435,7 @@ function AdminSessionManagement() {
                             revoked ? "status-revoked" : "status-active"
                           }`}
                         >
+                          <span className="status-dot"></span>
                           {revoked ? "Revoked" : "Active"}
                         </span>
                       </td>
@@ -378,37 +445,57 @@ function AdminSessionManagement() {
                       <td>
                         {current ? (
                           <span className="current-session-text">
-                            Current Session
+                            <span>✓</span> Current Session
                           </span>
                         ) : revoked ? (
                           <span className="revoked-session-text">
-                            Revoked
+                            Already Revoked
                           </span>
                         ) : (
                           <button
                             className="session-revoke-btn"
-                            onClick={() => setSelectedSession(session)}
+                            onClick={() => {
+                              setError("");
+                              setSuccess("");
+                              setSelectedSession(session);
+                            }}
                             disabled={revokingId !== null}
                           >
-                            Revoke
+                            <span>⊗</span> Revoke
                           </button>
                         )}
                       </td>
+
                     </tr>
                   );
                 })}
               </tbody>
+
             </table>
           </div>
         )}
+
+        <div className="sessions-table-footer">
+          <span>
+            Showing <strong>{sessions.length}</strong> registered sessions
+          </span>
+
+          <span className="footer-security-label">
+            <span></span> SESSION MONITORING ACTIVE
+          </span>
+        </div>
+
       </div>
 
       {/* SECURITY INFORMATION */}
 
       <div className="sessions-security-note">
-        <div className="security-note-icon">🛡️</div>
 
-        <div>
+        <div className="security-note-icon">♢</div>
+
+        <div className="security-note-content">
+          <span className="security-note-label">SECURITY INFORMATION</span>
+
           <h3>Session Security</h3>
 
           <p>
@@ -417,6 +504,11 @@ function AdminSessionManagement() {
             remain logged in.
           </p>
         </div>
+
+        <div className="security-note-badge">
+          <span>✓</span> Protected
+        </div>
+
       </div>
 
       {/* REVOKE CONFIRMATION MODAL */}
@@ -432,29 +524,59 @@ function AdminSessionManagement() {
         >
           <div
             className="session-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="revoke-modal-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="modal-warning-icon">⚠️</div>
 
-            <h2>Revoke Device Session?</h2>
+            <div className="modal-top-line"></div>
 
-            <p>Are you sure you want to logout this device?</p>
+            <button
+              className="modal-close-btn"
+              onClick={() => setSelectedSession(null)}
+              disabled={revokingId !== null}
+              aria-label="Close dialog"
+            >
+              ×
+            </button>
 
-            <div className="modal-device-info">
-              <strong>{getDeviceName(selectedSession)}</strong>
+            <div className="modal-warning-icon">!</div>
 
-              <span>
-                {selectedSession.ip_address || "IP not available"}
-              </span>
-            </div>
+            <span className="modal-eyebrow">SECURITY ACTION</span>
 
-            <p className="modal-warning-text">
-              This device will no longer be able to access protected
-              admin APIs using its current session. It will need
-              to login again.
+            <h2 id="revoke-modal-title">
+              Revoke Device <span>Session?</span>
+            </h2>
+
+            <p className="modal-description">
+              Are you sure you want to log out this device?
             </p>
 
+            <div className="modal-device-info">
+              <div className="modal-device-icon">▣</div>
+
+              <div>
+                <strong>{getDeviceName(selectedSession)}</strong>
+
+                <span>
+                  {selectedSession.ip_address || "IP not available"}
+                </span>
+              </div>
+            </div>
+
+            <div className="modal-warning-text">
+              <span>!</span>
+
+              <p>
+                This device will no longer be able to access protected
+                admin APIs using its current session. It will need
+                to login again.
+              </p>
+            </div>
+
             <div className="modal-actions">
+
               <button
                 className="modal-cancel-btn"
                 onClick={() => setSelectedSession(null)}
@@ -468,14 +590,24 @@ function AdminSessionManagement() {
                 onClick={revokeSession}
                 disabled={revokingId !== null}
               >
-                {revokingId !== null
-                  ? "Revoking..."
-                  : "Yes, Revoke Session"}
+                {revokingId !== null ? (
+                  <>
+                    <span className="button-spinner"></span>
+                    Revoking...
+                  </>
+                ) : (
+                  <>
+                    ⊗ Yes, Revoke Session
+                  </>
+                )}
               </button>
+
             </div>
+
           </div>
         </div>
       )}
+
     </div>
   );
 }

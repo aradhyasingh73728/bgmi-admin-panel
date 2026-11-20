@@ -25,39 +25,23 @@ const timeAgo = (value) => {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
+  if (Number.isNaN(date.getTime())) return "—";
 
-  const diff = Date.now() - date.getTime();
+  const diff = Math.max(0, Date.now() - date.getTime());
+  const seconds = Math.floor(diff / 1000);
 
-  const seconds = Math.max(
-    0,
-    Math.floor(diff / 1000)
-  );
-
-  if (seconds < 60) {
-    return `${seconds}s ago`;
-  }
+  if (seconds < 60) return `${seconds}s ago`;
 
   const minutes = Math.floor(seconds / 60);
 
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
+  if (minutes < 60) return `${minutes}m ago`;
 
   const hours = Math.floor(minutes / 60);
 
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
+  if (hours < 24) return `${hours}h ago`;
 
   return `${Math.floor(hours / 24)}d ago`;
 };
-
-// ============================================================
-// ACTIVITY ICONS
-// ============================================================
 
 const activityIcon = {
   deposit: "💰",
@@ -75,21 +59,40 @@ const activityTitle = {
 
 const Dashboard = () => {
   const [data, setData] = useState(null);
-
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
-
   const [error, setError] = useState("");
-
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  // ==========================================================
+  // CUSTOM UI NOTIFICATION
+  // ==========================================================
+
+  const showToast = useCallback((message, type = "success") => {
+    setToast({
+      id: Date.now(),
+      message,
+      type,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 3500);
+
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // ==========================================================
   // LOAD DASHBOARD
   // ==========================================================
 
   const loadDashboard = useCallback(
-    async (silent = false) => {
+    async (silent = false, notify = false) => {
       try {
         if (silent) {
           setRefreshing(true);
@@ -99,7 +102,6 @@ const Dashboard = () => {
 
         setError("");
 
-        // ADMIN JWT TOKEN
         const token = localStorage.getItem("adminToken");
 
         if (!token) {
@@ -130,28 +132,29 @@ const Dashboard = () => {
         setData(result);
 
         setLastUpdated(
-          new Date(
-            result.generatedAt || Date.now()
-          )
+          new Date(result.generatedAt || Date.now())
         );
 
+        if (notify) {
+          showToast("Dashboard updated successfully.", "success");
+        }
       } catch (err) {
-        console.error(
-          "Dashboard load error:",
-          err
-        );
+        console.error("Dashboard load error:", err);
 
-        setError(
-          err.message ||
-            "Dashboard data load failed"
-        );
+        const message =
+          err.message || "Dashboard data load failed.";
 
+        setError(message);
+
+        if (notify) {
+          showToast(message, "error");
+        }
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    []
+    [showToast]
   );
 
   // ==========================================================
@@ -183,37 +186,36 @@ const Dashboard = () => {
         meta: `${stats.users?.verified || 0} verified`,
         tone: "blue",
       },
-
       {
         icon: "💳",
         label: "Wallet Balance",
-        value: money(
-          stats.users?.walletBalance
-        ),
+        value: money(stats.users?.walletBalance),
         meta: "Total user wallet funds",
         tone: "green",
       },
-
       {
         icon: "⏳",
         label: "Pending Deposits",
         value: stats.deposits?.pending || 0,
-        meta: money(
-          stats.deposits?.pendingAmount
-        ),
+        meta: money(stats.deposits?.pendingAmount),
         tone: "yellow",
       },
-
       {
         icon: "💸",
         label: "Pending Withdrawals",
         value: stats.withdrawals?.pending || 0,
-        meta: money(
-          stats.withdrawals?.pendingAmount
-        ),
+        meta: money(stats.withdrawals?.pendingAmount),
         tone: "red",
       },
     ];
+  }, [data]);
+
+  const recentActivity = useMemo(() => {
+    return (data?.recentActivity || []).filter((item) =>
+      ["deposit", "withdraw"].includes(
+        String(item.type).toLowerCase()
+      )
+    );
   }, [data]);
 
   // ==========================================================
@@ -223,7 +225,12 @@ const Dashboard = () => {
   if (loading && !data) {
     return (
       <div className="admin-dashboard loading-state">
-        Loading live dashboard…
+        <div className="loading-content">
+          <div className="gaming-loader" />
+          <h2>BGMI ADMIN</h2>
+          <p>Loading control center...</p>
+          <span className="loading-line" />
+        </div>
       </div>
     );
   }
@@ -234,70 +241,131 @@ const Dashboard = () => {
 
   return (
     <div className="admin-dashboard">
+      {/* CUSTOM NOTIFICATION */}
+
+      {toast && (
+        <div
+          key={toast.id}
+          className={`dashboard-toast ${toast.type}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="toast-icon">
+            {toast.type === "success" ? "✓" : "!"}
+          </span>
+
+          <span className="toast-message">
+            {toast.message}
+          </span>
+
+          <button
+            type="button"
+            className="toast-close"
+            onClick={() => setToast(null)}
+            aria-label="Close notification"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* TOP BAR */}
 
-      <div className="dashboard-topbar">
-        <div>
+      <header className="dashboard-topbar">
+        <div className="dashboard-heading">
           <div className="eyebrow">
+            <span className="eyebrow-line" />
             ADMIN CONTROL CENTER
           </div>
 
           <h1>
-            BGMI Admin Dashboard
+            BGMI <span>ADMIN</span>
           </h1>
 
           <p>
-            Live overview of users, wallet activity,
-            deposits, withdrawals and bank operations.
+            Manage your gaming platform from one powerful
+            control center.
           </p>
         </div>
 
         <div className="dashboard-top-actions">
           <div className="live-status">
             <span className="live-dot" />
-            LIVE
+            LIVE SYSTEM
           </div>
 
           <div className="updated-text">
-            {lastUpdated
-              ? `Updated ${lastUpdated.toLocaleTimeString(
-                  "en-IN"
-                )}`
-              : "Updating…"}
+            <span className="updated-label">
+              LAST SYNC
+            </span>
+
+            <strong>
+              {lastUpdated
+                ? lastUpdated.toLocaleTimeString("en-IN")
+                : "Updating..."}
+            </strong>
           </div>
 
           <button
             type="button"
             className="refresh-dashboard"
-            onClick={() => loadDashboard(true)}
+            onClick={() => loadDashboard(true, true)}
             disabled={refreshing}
           >
-            {refreshing
-              ? "↻ Updating…"
-              : "↻ Refresh"}
+            <span className={refreshing ? "refresh-icon spinning" : "refresh-icon"}>
+              ↻
+            </span>
+
+            {refreshing ? "Updating..." : "Refresh"}
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* ERROR */}
+      {/* ERROR PANEL */}
 
       {error && (
-        <div className="dashboard-alert">
-          ⚠️ {error}
+        <div className="dashboard-alert" role="alert">
+          <div className="alert-symbol">!</div>
+
+          <div className="alert-content">
+            <strong>Connection issue</strong>
+            <span>{error}</span>
+          </div>
+
+          <button
+            type="button"
+            className="alert-retry"
+            onClick={() => loadDashboard(true, true)}
+            disabled={refreshing}
+          >
+            Retry
+          </button>
         </div>
       )}
+
+      {/* SECTION LABEL */}
+
+      <div className="section-label">
+        <span className="section-indicator" />
+        PLATFORM OVERVIEW
+      </div>
 
       {/* SUMMARY CARDS */}
 
       <div className="stat-grid">
         {summary.map((item) => (
-          <div
+          <article
             className={`stat-card ${item.tone}`}
             key={item.label}
           >
-            <div className="stat-icon">
-              {item.icon}
+            <div className="stat-card-top">
+              <div className="stat-icon">
+                {item.icon}
+              </div>
+
+              <span className="stat-card-mark">
+                ●
+              </span>
             </div>
 
             <div className="stat-content">
@@ -313,35 +381,43 @@ const Dashboard = () => {
                 {item.meta}
               </div>
             </div>
-          </div>
+          </article>
         ))}
       </div>
 
-      {/* ANALYTICS GRID */}
+      {/* ANALYTICS */}
+
+      <div className="section-label">
+        <span className="section-indicator" />
+        SYSTEM ANALYTICS
+      </div>
 
       <div className="analytics-grid">
-
         {/* FINANCIAL OVERVIEW */}
 
-        <section className="panel">
+        <section className="panel financial-panel">
           <div className="panel-head">
             <div>
-              <h2>
-                Financial Overview
-              </h2>
+              <span className="panel-kicker">
+                WALLET & TRANSACTIONS
+              </span>
+
+              <h2>Financial Overview</h2>
 
               <p>
-                Approved and pending wallet-related activity.
+                Approved wallet activity and bank account
+                statistics.
               </p>
+            </div>
+
+            <div className="panel-head-icon">
+              ₹
             </div>
           </div>
 
           <div className="finance-grid">
             <div className="finance-item">
-              <span>
-                Approved Deposits
-              </span>
-
+              <span>Approved Deposits</span>
               <strong>
                 {money(
                   data?.stats?.deposits?.approvedAmount
@@ -350,10 +426,7 @@ const Dashboard = () => {
             </div>
 
             <div className="finance-item">
-              <span>
-                Approved Withdrawals
-              </span>
-
+              <span>Approved Withdrawals</span>
               <strong>
                 {money(
                   data?.stats?.withdrawals?.approvedAmount
@@ -362,20 +435,14 @@ const Dashboard = () => {
             </div>
 
             <div className="finance-item">
-              <span>
-                Verified Bank Accounts
-              </span>
-
+              <span>Verified Bank Accounts</span>
               <strong>
                 {data?.stats?.banks?.verified || 0}
               </strong>
             </div>
 
             <div className="finance-item">
-              <span>
-                Total Bank Accounts
-              </span>
-
+              <span>Total Bank Accounts</span>
               <strong>
                 {data?.stats?.banks?.total || 0}
               </strong>
@@ -385,141 +452,152 @@ const Dashboard = () => {
 
         {/* SYSTEM MODULES */}
 
-        <section className="panel">
+        <section className="panel modules-panel">
           <div className="panel-head">
             <div>
-              <h2>
-                System Modules
-              </h2>
+              <span className="panel-kicker">
+                SERVER HEALTH
+              </span>
+
+              <h2>System Modules</h2>
 
               <p>
-                Live database connectivity for each module.
+                Live connectivity status of each module.
               </p>
+            </div>
+
+            <div className="panel-head-icon">
+              ⚙
             </div>
           </div>
 
           <div className="module-list">
-            {Object.entries(
-              data?.modules || {}
-            ).map(([name, ok]) => (
-              <div
-                className="module-row"
-                key={name}
-              >
-                <span>
-                  {name.replace(
-                    /^./,
-                    (c) => c.toUpperCase()
-                  )}
-                </span>
-
-                <span
-                  className={`module-badge ${
-                    ok ? "ok" : "down"
-                  }`}
-                >
-                  {ok
-                    ? "● ONLINE"
-                    : "● ERROR"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      {/* MAIN CONTENT */}
-
-      <div className="content-grid">
-
-        {/* LIVE ACTIVITY */}
-
-        <section className="panel activity-panel">
-          <div className="panel-head">
-            <div>
-              <h2>
-                Live Activity
-              </h2>
-
-              <p>
-                Latest deposit and withdrawal events.
-              </p>
-            </div>
-          </div>
-
-          <div className="activity-list">
-            {(data?.recentActivity || [])
-              .filter((item) =>
-                ["deposit", "withdraw"].includes(
-                  String(item.type).toLowerCase()
-                )
-              )
-              .map((item) => (
-                <div
-                  className="activity-item"
-                  key={item.id}
-                >
-                  <div className="activity-icon">
-                    {activityIcon[item.type] || "•"}
-                  </div>
-
-                  <div className="activity-main">
-                    <strong>
-                      {item.title}
-                    </strong>
-
-                    <span>
-                      {item.subtitle}
-                    </span>
-
-                    <small>
-                      {activityTitle[item.type] ||
-                        item.type}
-
-                      {" • "}
-
-                      {timeAgo(item.timestamp)}
-                    </small>
-                  </div>
-
-                  <div className="activity-right">
-                    {Number(item.amount || 0) > 0 && (
-                      <strong>
-                        {money(item.amount)}
-                      </strong>
+            {Object.entries(data?.modules || {}).map(
+              ([name, ok]) => (
+                <div className="module-row" key={name}>
+                  <span className="module-name">
+                    <span className="module-mini-dot" />
+                    {name.replace(
+                      /^./,
+                      (c) => c.toUpperCase()
                     )}
+                  </span>
 
-                    <span
-                      className={`activity-status ${String(
-                        item.status || ""
-                      )
-                        .toLowerCase()
-                        .replace(/\s+/g, "-")}`}
-                    >
-                      {item.status || "—"}
-                    </span>
-                  </div>
+                  <span
+                    className={`module-badge ${
+                      ok ? "ok" : "down"
+                    }`}
+                  >
+                    <span className="module-status-dot" />
+                    {ok ? "ONLINE" : "ERROR"}
+                  </span>
                 </div>
-              ))}
-
-            {!data?.recentActivity?.some((item) =>
-              ["deposit", "withdraw"].includes(
-                String(item.type).toLowerCase()
               )
-            ) && (
+            )}
+
+            {Object.keys(data?.modules || {}).length === 0 && (
               <div className="empty-row">
-                No recent deposit or withdrawal activity.
+                Module information is not available.
               </div>
             )}
           </div>
         </section>
       </div>
 
+      {/* LIVE ACTIVITY */}
+
+      <div className="section-label">
+        <span className="section-indicator" />
+        RECENT TRANSACTIONS
+      </div>
+
+      <section className="panel activity-panel">
+        <div className="panel-head">
+          <div>
+            <span className="panel-kicker">
+              REAL-TIME FEED
+            </span>
+
+            <h2>Live Activity</h2>
+
+            <p>
+              Latest deposit and withdrawal events.
+            </p>
+          </div>
+
+          <div className="activity-live-tag">
+            <span className="live-dot" />
+            LIVE FEED
+          </div>
+        </div>
+
+        <div className="activity-list">
+          {recentActivity.map((item) => {
+            const type = String(item.type).toLowerCase();
+
+            return (
+              <div
+                className="activity-item"
+                key={item.id}
+              >
+                <div className={`activity-icon ${type}`}>
+                  {activityIcon[type] || "•"}
+                </div>
+
+                <div className="activity-main">
+                  <strong>
+                    {item.title || activityTitle[type]}
+                  </strong>
+
+                  <span>{item.subtitle || "—"}</span>
+
+                  <small>
+                    {activityTitle[type] || type}
+                    {" · "}
+                    {timeAgo(item.timestamp)}
+                  </small>
+                </div>
+
+                <div className="activity-right">
+                  {Number(item.amount || 0) > 0 && (
+                    <strong>
+                      {money(item.amount)}
+                    </strong>
+                  )}
+
+                  <span
+                    className={`activity-status ${String(
+                      item.status || ""
+                    )
+                      .toLowerCase()
+                      .replace(/\s+/g, "-")}`}
+                  >
+                    {item.status || "—"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+
+          {recentActivity.length === 0 && (
+            <div className="empty-row">
+              <span className="empty-icon">⌁</span>
+              <strong>No recent activity</strong>
+              <span>
+                Deposit and withdrawal updates will appear here.
+              </span>
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* FOOTER */}
 
-      <div className="footer-strip">
-        <span>
-          Database:{" "}
+      <footer className="footer-strip">
+        <div className="footer-status">
+          <span className="footer-dot" />
+          <span>DATABASE</span>
+
           <b
             className={
               data?.modules?.database
@@ -528,25 +606,22 @@ const Dashboard = () => {
             }
           >
             {data?.modules?.database
-              ? "Connected"
-              : "Issue detected"}
+              ? "CONNECTED"
+              : "ISSUE DETECTED"}
           </b>
-        </span>
+        </div>
 
-        <span>
-          Auto refresh:{" "}
-          <b>
-            10 seconds
-          </b>
-        </span>
+        <div className="footer-info">
+          AUTO REFRESH: <b>10 SECONDS</b>
+        </div>
 
-        <span>
-          Dashboard scope:{" "}
+        <div className="footer-info footer-scope">
+          SCOPE:{" "}
           <b>
-            Users • Wallet • Deposits • Withdrawals • Banks
+            USERS · WALLET · DEPOSITS · WITHDRAWALS · BANKS
           </b>
-        </span>
-      </div>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -4,9 +4,9 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./AdminLogin.css";
 
-/* ===============================
+/* =================================
    API BASE - LOCAL + LIVE
-================================ */
+================================= */
 
 const API_URL =
   window.location.hostname === "localhost" ||
@@ -17,18 +17,28 @@ const API_URL =
 const AdminLogin = () => {
   const [adminId, setAdminId] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
 
-  /* ===============================
+  /* =================================
      LOGIN HANDLER
-  ================================ */
+  ================================= */
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (loading) return;
+
     setError("");
+
+    if (!adminId.trim() || !password) {
+      setError("Please enter your Admin ID and password.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -36,43 +46,57 @@ const AdminLogin = () => {
         `${API_URL}/admin/login`,
         {
           id: adminId.trim(),
-          password: password.trim(),
+          password: password,
         },
         {
           headers: {
             "Content-Type": "application/json",
           },
+          timeout: 20000,
         }
       );
 
-      if (res.data?.success) {
-        localStorage.setItem("bgmi_admin_logged_in", "true");
-        localStorage.setItem("adminToken", res.data.token);
+      if (res.data?.success && res.data?.token) {
+        const token = res.data.token;
 
-        const verify = await axios.get(`${API_URL}/admin/verify`, {
-          headers: {
-            Authorization: `Bearer ${res.data.token}`,
-          },
-        });
+        localStorage.setItem("adminToken", token);
+        localStorage.setItem("bgmi_admin_logged_in", "true");
+
+        const verify = await axios.get(
+          `${API_URL}/admin/verify`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            timeout: 20000,
+          }
+        );
 
         if (verify.data?.success) {
           navigate("/", { replace: true });
           return;
         }
 
-        setError("Token verification failed. Try login again.");
+        setError("Token verification failed. Please login again.");
 
         localStorage.removeItem("adminToken");
         localStorage.removeItem("bgmi_admin_logged_in");
       } else {
-        setError("Invalid admin credentials");
+        setError(
+          res.data?.message || "Invalid admin credentials."
+        );
       }
     } catch (err) {
-      console.error("Login error:", err.response || err.message);
+      console.error(
+        "Admin login error:",
+        err.response?.data || err.message
+      );
 
       setError(
         err.response?.data?.message ||
-          "Admin login failed. Check ID & Password."
+        (err.code === "ECONNABORTED"
+          ? "Server response timed out. Please try again."
+          : "Admin login failed. Please check your credentials.")
       );
 
       localStorage.removeItem("adminToken");
@@ -83,73 +107,185 @@ const AdminLogin = () => {
   };
 
   return (
-    <div className="auth-page hacker-bg">
-      <div className="auth-shell">
-        <div className="auth-card hacker-card">
-          <div className="auth-header">
-            <span className="auth-badge">ADMIN ACCESS</span>
+    <div className="admin-auth-page">
 
-            <h2 className="page-title">Free Fire Admin Login</h2>
+      {/* BACKGROUND EFFECTS */}
 
-            <p className="page-subtitle">
-              Authorized access only
+      <div className="admin-bg-grid"></div>
+      <div className="admin-bg-glow admin-glow-one"></div>
+      <div className="admin-bg-glow admin-glow-two"></div>
+
+      {/* MAIN LOGIN WRAPPER */}
+
+      <div className="admin-auth-shell">
+
+        <div className="admin-auth-card">
+
+          {/* TOP DECORATION */}
+
+          <div className="admin-card-top-line"></div>
+
+          {/* BRANDING */}
+
+          <div className="admin-auth-header">
+
+            <div className="admin-logo">
+              <span className="admin-logo-icon">⚔</span>
+            </div>
+
+            <span className="admin-access-badge">
+              <span className="admin-live-dot"></span>
+              SECURE ADMIN ACCESS
+            </span>
+
+            <h1 className="admin-login-title">
+              BGMI <span>ESPORTS</span>
+            </h1>
+
+            <h2 className="admin-login-subtitle">
+              CONTROL LOGIN
+            </h2>
+
+            <p className="admin-login-description">
+              Authorized administrators only
             </p>
 
-            <small className="api-text">
-              API: {API_URL}
-            </small>
           </div>
 
+          {/* ERROR MESSAGE */}
+
           {error && (
-            <div className="alert alert-error" role="alert">
-              {error}
+            <div className="admin-login-error" role="alert">
+              <span className="admin-error-icon">!</span>
+              <span>{error}</span>
             </div>
           )}
 
-          <form className="auth-form" onSubmit={handleSubmit}>
-            <label className="form-label" htmlFor="adminId">
-              <span>Admin ID</span>
+          {/* LOGIN FORM */}
 
-              <input
-                id="adminId"
-                type="text"
-                className="form-input hacker-input"
-                placeholder="Enter admin ID"
-                value={adminId}
-                onChange={(e) => setAdminId(e.target.value)}
-                required
-                autoComplete="username"
-              />
-            </label>
+          <form
+            className="admin-login-form"
+            onSubmit={handleSubmit}
+          >
 
-            <label className="form-label" htmlFor="password">
-              <span>Password</span>
+            {/* ADMIN ID */}
 
-              <input
-                id="password"
-                type="password"
-                className="form-input hacker-input"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-            </label>
+            <div className="admin-input-group">
+
+              <label htmlFor="adminId">
+                ADMIN ID
+              </label>
+
+              <div className="admin-input-wrapper">
+                <span className="admin-input-icon">◈</span>
+
+                <input
+                  id="adminId"
+                  type="text"
+                  placeholder="Enter your admin ID"
+                  value={adminId}
+                  onChange={(e) => {
+                    setAdminId(e.target.value);
+                    setError("");
+                  }}
+                  autoComplete="username"
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+            </div>
+
+            {/* PASSWORD */}
+
+            <div className="admin-input-group">
+
+              <label htmlFor="adminPassword">
+                PASSWORD
+              </label>
+
+              <div className="admin-input-wrapper">
+                <span className="admin-input-icon">◆</span>
+
+                <input
+                  id="adminPassword"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError("");
+                  }}
+                  autoComplete="current-password"
+                  required
+                  disabled={loading}
+                />
+
+                <button
+                  type="button"
+                  className="admin-password-toggle"
+                  onClick={() =>
+                    setShowPassword((previous) => !previous)
+                  }
+                  aria-label={
+                    showPassword
+                      ? "Hide password"
+                      : "Show password"
+                  }
+                  disabled={loading}
+                >
+                  {showPassword ? "HIDE" : "SHOW"}
+                </button>
+              </div>
+
+            </div>
+
+            {/* LOGIN BUTTON */}
 
             <button
               type="submit"
-              className="btn-primary hacker-btn"
+              className="admin-login-button"
               disabled={loading}
             >
-              {loading ? "Verifying..." : "Login"}
+              {loading ? (
+                <>
+                  <span className="admin-button-spinner"></span>
+                  VERIFYING ACCESS...
+                </>
+              ) : (
+                <>
+                  <span>ENTER CONTROL ROOM</span>
+                  <span className="admin-button-arrow">➜</span>
+                </>
+              )}
             </button>
 
-            <p className="auth-footer-text">
-              Unauthorized access is prohibited 🚫
-            </p>
+            {/* SECURITY MESSAGE */}
+
+            <div className="admin-security-message">
+              <span>🛡</span>
+              <p>
+                Protected admin authentication system.
+                Unauthorized access is prohibited.
+              </p>
+            </div>
+
           </form>
+
+          {/* FOOTER */}
+
+          <div className="admin-login-footer">
+            <span>BGMI ESPORTS</span>
+            <span className="admin-footer-divider">|</span>
+            <span>ADMIN PANEL</span>
+          </div>
+
         </div>
+
+        <p className="admin-bottom-text">
+          POWERED BY ESPORTS MANAGEMENT SYSTEM
+        </p>
+
       </div>
     </div>
   );

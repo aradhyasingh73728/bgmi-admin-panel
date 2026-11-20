@@ -1,0 +1,323 @@
+
+/* =========================================
+   BGMI ESPORTS - PREMIUM SIDEBAR
+   FIXED TEXT OVERFLOW + RESPONSIVE LAYOUT
+========================================= */
+
+.sidebar {
+  width: 283px;
+  min-width: 283px;
+  max-width: 283px;
+  height: 100vh;
+
+  display: flex;
+  flex-direction: column;
+
+  position: relative;
+  z-index: 100;
+
+  overflow: hidden;
+  box-sizing: border-box;
+
+  background: linear-gradient(
+    180deg,
+    #080d1b 0%,
+    #050918 55%,
+    #080d19 100%
+  );
+
+  border-right: 1px solid rgba(0, 230, 118, 0.12);
+
+  box-shadow: 8px 0 30px rgba(0, 0, 0, 0.25);
+
+  font-family: "Inter", "Segoe UI", sans-serif;
+}
+
+/* =========================================
+   SIDEBAR LOGO
+========================================= */
+
+.sidebar-logo {
+  width: 100%;
+  min-height: 112px;
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px 15px;
+
+  position: relative;
+  box-sizing: border-box;
+
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.sidebar-logo::after {
+  content: "";
+
+  position: absolute;
+  bottom: -1px;
+  left: 25%;
+
+  width: 50%;
+  height: 2px;
+
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #00e676,
+    transparent
+  );
+
+  box-shadow: 0 0 12px rgba(0, 230, 118, 0.6);
+}
+
+.logo-main {
+  color: #00e676;
+
+  font-size: 25px;
+  font-weight: 900;
+  letter-spacing: 4px;
+
+  text-align: center;
+
+  text-shadow: 0 0 18px rgba(0, 230, 118, 0.25);
+}
+
+/* =========================================
+   SIDEBAR NAVIGATION
+========================================= */
+
+.sidebar-nav {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+
+  gap: 7px;
+
+  padding: 24px 16px 25px;
+
+  overflow-x: hidden;
+  overflow-y: auto;
+
+  box-sizing: border-box;
+}
+
+/* =========================================
+   NAVIGATION SCROLLBAR
+========================================= */
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(0, 230, 118, 0.25);
+  border-radius: 20px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: #00e676;
+}
+
+/* =========================================
+   NAVIGATION BUTTONS
+========================================= */
+
+.sidebar-nav .nav-item {
+  width: 100%;
+
+  /* IMPORTANT: Long text ke liye automatic height */
+  height: auto !important;
+  min-height: 49px;
+  max-height: none;
+
+  flex: 0 0 auto;
+
+  display: flex;
+  align-items: center;
+
+  padding: 12px 13px;
+
+  box-sizing: border-box;
+
+  color: #aab5c5;
+
+  background: transparent;
+
+  border: 1px solid transparent;
+  border-radius: 10px;
+
+  text-decoration: none;
+
+  font-size: 13.5px;
+  font-weight: 600;
+
+  line-height: 1.45;
+
+  /* TEXT OVERFLOW FIX */
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+
+  overflow: visible;
+
+  transition:
+    background 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+/* =========================================
+   HOVER EFFECT
+========================================= */
+
+.sidebar-nav .nav-item:hover {
+  color: #ffffff;
+
+  background: rgba(0, 230, 118, 0.08);
+
+  border-color: rgba(0, 230, 118, 0.18);
+
+  transform: translateX(3px);
+}
+
+/* =========================================
+   ACTIVE NAVIGATION BUTTON
+========================================= */
+
+.sidebar-nav .nav-item.active {
+  color: #00f58a;
+
+  background: linear-gradient(
+    90deg,
+    rgba(0, 230, 118, 0.19),
+    rgba(0, 230, 118, 0.055)
+  );
+
+  border-color: rgba(0, 230, 118, 0.38);
+
+  box-shadow:
+    inset 3px 0 0 #00e676,
+    0 3px 14px rgba(0, 230, 118, 0.08);
+
+  font-weight: 750;
+}
+
+/* ACTIVE HOVER */
+
+.sidebar-nav .nav-item.active:hover {
+  color: #ffffff;
+
+  background: rgba(0, 230, 118, 0.17);
+
+  border-color: rgba(0, 230, 118, 0.5);
+}
+
+/* =========================================
+   FOCUS ACCESSIBILITY
+========================================= */
+
+.sidebar-nav .nav-item:focus-visible {
+  outline: 2px solid #00e676;
+  outline-offset: 3px;
+}
+
+/* =========================================
+   TABLET RESPONSIVE
+========================================= */
+
+@media (max-width: 1000px) {
+  .sidebar {
+    width: 250px;
+    min-width: 250px;
+    max-width: 250px;
+  }
+
+  .sidebar-logo {
+    min-height: 95px;
+  }
+
+  .logo-main {
+    font-size: 22px;
+  }
+
+  .sidebar-nav {
+    padding: 20px 13px;
+    gap: 6px;
+  }
+
+  .sidebar-nav .nav-item {
+    min-height: 47px;
+    padding: 11px 12px;
+    font-size: 13px;
+  }
+}
+
+/* =========================================
+   MOBILE RESPONSIVE
+========================================= */
+
+@media (max-width: 650px) {
+  .sidebar {
+    width: 235px;
+    min-width: 235px;
+    max-width: 235px;
+  }
+
+  .sidebar-logo {
+    min-height: 82px;
+    padding: 15px;
+  }
+
+  .logo-main {
+    font-size: 21px;
+    letter-spacing: 3px;
+  }
+
+  .sidebar-nav {
+    padding: 16px 11px 20px;
+    gap: 6px;
+  }
+
+  .sidebar-nav .nav-item {
+    min-height: 45px;
+    padding: 10px 11px;
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+}
+
+/* =========================================
+   SMALL MOBILE
+========================================= */
+
+@media (max-width: 380px) {
+  .sidebar {
+    width: 220px;
+    min-width: 220px;
+    max-width: 220px;
+  }
+
+  .sidebar-nav {
+    padding: 14px 9px;
+    gap: 5px;
+  }
+
+  .sidebar-nav .nav-item {
+    padding: 10px;
+    font-size: 12px;
+  }
+}

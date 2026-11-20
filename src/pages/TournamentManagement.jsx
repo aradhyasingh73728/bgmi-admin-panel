@@ -1,23 +1,25 @@
-
 import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import "./TournamentManagement.css";
 
 // ==================================================
-// API CONFIGURATION
+// API CONFIGURATION (Vite)
 // ==================================================
 
 const API_BASE = (
-  process.env.REACT_APP_TOURNAMENT_API_URL ||
-  (window.location.hostname === "localhost"
+  import.meta.env.VITE_TOURNAMENT_API_URL ||
+  (import.meta.env.DEV
     ? "http://localhost:5005"
     : "https://create-tournament-server-5005.onrender.com")
 ).replace(/\/+$/, "");
+
+const LOGIN_PATH = "/admin-login";
 
 const STATUSES = ["Draft", "Upcoming", "Live", "Cancelled"];
 
@@ -39,27 +41,27 @@ const CLASSIC_MAPS = [
 ];
 
 // ==================================================
-// INDIA DATE
+// HELPERS
 // ==================================================
 
-const getTodayDate = () => {
-  return new Intl.DateTimeFormat("en-CA", {
+const getTodayDate = () =>
+  new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-};
-
-// ==================================================
-// HELPERS
-// ==================================================
 
 const money = (value) =>
   `₹${Number(value || 0).toLocaleString("en-IN")}`;
 
-const makeId = () =>
-  `BG${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+// Crypto based random ID (fewer collisions than Math.random)
+const makeId = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(5);
+  window.crypto.getRandomValues(bytes);
+  return `BG${Array.from(bytes, (b) => chars[b % chars.length]).join("")}`;
+};
 
 const getTimeInput = (value) =>
   value ? String(value).slice(0, 5) : "";
@@ -72,6 +74,12 @@ const getVisibilityLabel = (tournament) => {
 
 const getTdmSlots = (mode) =>
   TDM_MODES.find((item) => item.value === mode)?.slots || 2;
+
+const isLockedStatus = (status) =>
+  status === "Completed" || status === "Cancelled";
+
+const dateTimeKey = (t) =>
+  `${String(t.date || "").slice(0, 10)} ${getTimeInput(t.time)}`;
 
 const EMPTY_FORM = {
   name: "",
@@ -110,10 +118,7 @@ const TournamentManagement = () => {
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterType, setFilterType] = useState("All");
 
-  // Three page sections
   const [activeSection, setActiveSection] = useState("today");
-
-  // Update date automatically
   const [today, setToday] = useState(getTodayDate());
 
   const [showForm, setShowForm] = useState(false);
@@ -124,6 +129,39 @@ const TournamentManagement = () => {
     date: getTodayDate(),
   });
 
+  // Custom confirm dialog (replaces the browser's native confirm)
+  const [confirmState, setConfirmState] = useState(null);
+  const confirmResolver = useRef(null);
+
+  const askConfirm = useCallback(
+    (options) =>
+      new Promise((resolve) => {
+        confirmResolver.current = resolve;
+        setConfirmState(options);
+      }),
+    []
+  );
+
+  const closeConfirm = useCallback((result) => {
+    if (confirmResolver.current) confirmResolver.current(result);
+    confirmResolver.current = null;
+    setConfirmState(null);
+  }, []);
+
+  useEffect(() => {
+    if (!confirmState) return;
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") closeConfirm(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [confirmState, closeConfirm]);
+
+  // Latest-request guard (prevents stale responses from overwriting new data)
+  const loadRequestRef = useRef(0);
+
   // ==================================================
   // AUTO DATE REFRESH
   // ==================================================
@@ -131,7 +169,6 @@ const TournamentManagement = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       const latestDate = getTodayDate();
-
       setToday((previous) =>
         previous !== latestDate ? latestDate : previous
       );
@@ -141,22 +178,30 @@ const TournamentManagement = () => {
   }, []);
 
   // ==================================================
+  // AUTO DISMISS ALERTS
+  // ==================================================
+
+  useEffect(() => {
+    if (!success && !error) return;
+
+    const timer = setTimeout(() => {
+      setSuccess("");
+      setError("");
+    }, 7000);
+
+    return () => clearTimeout(timer);
+  }, [success, error]);
+
+  // ==================================================
   // API REQUEST
   // ==================================================
 
   const apiRequest = useCallback(async (path, options = {}) => {
-    if (!API_BASE) {
-      throw new Error(
-        "Tournament API URL missing. Set REACT_APP_TOURNAMENT_API_URL."
-      );
-    }
-
     const token = localStorage.getItem("adminToken");
 
     if (!token) {
-      throw new Error(
-        "Admin token nahi mila. Please login again."
-      );
+      window.location.href = LOGIN_PATH;
+      throw new Error("Admin token not found. Please log in again.");
     }
 
     const response = await fetch(`${API_BASE}${path}`, {
@@ -174,20 +219,25 @@ const TournamentManagement = () => {
     try {
       result = await response.json();
     } catch {
-      throw new Error(`Invalid server response. HTTP ${response.status}`);
+      throw new Error(`Invalid server response (HTTP ${response.status}).`);
     }
 
     if (response.status === 401) {
       localStorage.removeItem("adminToken");
       localStorage.removeItem("bgmi_admin_logged_in");
-      throw new Error("Admin session expired. Please login again.");
+      window.location.href = LOGIN_PATH;
+      throw new Error("Admin session expired. Please log in again.");
+    }
+
+    if (response.status === 403) {
+      throw new Error("You do not have permission to perform this action.");
     }
 
     if (!response.ok || !result.success) {
       throw new Error(
         result.error ||
-        result.message ||
-        `Request failed: HTTP ${response.status}`
+          result.message ||
+          `Request failed (HTTP ${response.status}).`
       );
     }
 
@@ -198,47 +248,54 @@ const TournamentManagement = () => {
   // LOAD DATA
   // ==================================================
 
-  const loadTournaments = useCallback(async (showLoader = false) => {
-    if (showLoader) setLoading(true);
+  const loadTournaments = useCallback(
+    async (showLoader = false) => {
+      const requestId = ++loadRequestRef.current;
 
-    try {
-      setError("");
+      if (showLoader) setLoading(true);
 
-      const [tournamentResult, dailyResult] = await Promise.all([
-        apiRequest("/api/admin/tournaments"),
-        apiRequest("/api/admin/daily-repeat"),
-      ]);
+      try {
+        const [tournamentResult, dailyResult] = await Promise.all([
+          apiRequest("/api/admin/tournaments"),
+          apiRequest("/api/admin/daily-repeat"),
+        ]);
 
-      setTournaments(
-        Array.isArray(tournamentResult.tournaments)
-          ? tournamentResult.tournaments
-          : []
-      );
+        // Ignore the response if a newer request has started
+        if (requestId !== loadRequestRef.current) return;
 
-      const rulesMap = {};
+        setTournaments(
+          Array.isArray(tournamentResult.tournaments)
+            ? tournamentResult.tournaments
+            : []
+        );
 
-      (dailyResult.rules || []).forEach((rule) => {
-        rulesMap[rule.source_tournament_id] = {
-          active: Boolean(rule.active),
-          next_run_date: rule.next_run_date || "",
-        };
-      });
+        const rulesMap = {};
 
-      setDailyRules(rulesMap);
-    } catch (err) {
-      console.error("Tournament load error:", err);
-      setError(err.message || "Tournament data load nahi hua.");
-    } finally {
-      setLoading(false);
-    }
-  }, [apiRequest]);
+        (dailyResult.rules || []).forEach((rule) => {
+          rulesMap[rule.source_tournament_id] = {
+            active: Boolean(rule.active),
+            next_run_date: rule.next_run_date || "",
+          };
+        });
+
+        setDailyRules(rulesMap);
+      } catch (err) {
+        if (requestId !== loadRequestRef.current) return;
+        console.error("Tournament load error:", err);
+        setError(err.message || "Unable to load tournament data.");
+      } finally {
+        if (requestId === loadRequestRef.current) setLoading(false);
+      }
+    },
+    [apiRequest]
+  );
 
   useEffect(() => {
     loadTournaments(true);
   }, [loadTournaments]);
 
   // ==================================================
-  // AUTOMATIC SECTION CLASSIFICATION
+  // SECTION CLASSIFICATION
   // ==================================================
 
   const classifiedTournaments = useMemo(() => {
@@ -250,45 +307,33 @@ const TournamentManagement = () => {
       const date = String(tournament.date || "").slice(0, 10);
       const status = tournament.status || "Draft";
 
-      // Completed and Cancelled always go to history.
-      if (
-        status === "Completed" ||
-        status === "Cancelled" ||
-        !date
-      ) {
+      if (isLockedStatus(status) || !date) {
         historyList.push(tournament);
         return;
       }
 
-      // Past dates go to history.
+      // A Live tournament always stays in "Today", whatever its date
+      // (it may have started late at night and run past midnight).
+      if (status === "Live") {
+        todayList.push(tournament);
+        return;
+      }
+
       if (date < today) {
         historyList.push(tournament);
-        return;
-      }
-
-      // Future dates go to upcoming.
-      if (date > today) {
+      } else if (date > today) {
         upcomingList.push(tournament);
-        return;
+      } else {
+        todayList.push(tournament);
       }
-
-      // Only today's non-completed tournaments.
-      todayList.push(tournament);
     });
 
-    const sortByDateTime = (a, b) => {
-      const dateA = `${a.date || ""} ${getTimeInput(a.time)}`;
-      const dateB = `${b.date || ""} ${getTimeInput(b.time)}`;
-      return dateA.localeCompare(dateB);
-    };
+    const ascending = (a, b) => dateTimeKey(a).localeCompare(dateTimeKey(b));
+    const descending = (a, b) => dateTimeKey(b).localeCompare(dateTimeKey(a));
 
-    todayList.sort(sortByDateTime);
-    upcomingList.sort(sortByDateTime);
-    historyList.sort((a, b) => {
-      const dateA = `${a.date || ""} ${getTimeInput(a.time)}`;
-      const dateB = `${b.date || ""} ${getTimeInput(b.time)}`;
-      return dateB.localeCompare(dateA);
-    });
+    todayList.sort(ascending);
+    upcomingList.sort(ascending);
+    historyList.sort(descending);
 
     return {
       today: todayList,
@@ -297,13 +342,10 @@ const TournamentManagement = () => {
     };
   }, [tournaments, today]);
 
-  // ==================================================
-  // ACTIVE SECTION + FILTERS
-  // ==================================================
-
-  const sectionTournaments = useMemo(() => {
-  return classifiedTournaments[activeSection] || [];
-}, [classifiedTournaments, activeSection]);
+  const sectionTournaments = useMemo(
+    () => classifiedTournaments[activeSection] || [],
+    [classifiedTournaments, activeSection]
+  );
 
   const filteredTournaments = useMemo(() => {
     const searchText = search.trim().toLowerCase();
@@ -315,8 +357,7 @@ const TournamentManagement = () => {
         String(tournament.id || "").toLowerCase().includes(searchText);
 
       const matchesStatus =
-        filterStatus === "All" ||
-        tournament.status === filterStatus;
+        filterStatus === "All" || tournament.status === filterStatus;
 
       const matchesType =
         filterType === "All" ||
@@ -324,12 +365,7 @@ const TournamentManagement = () => {
 
       return matchesSearch && matchesStatus && matchesType;
     });
-  }, [
-    sectionTournaments,
-    search,
-    filterStatus,
-    filterType,
-  ]);
+  }, [sectionTournaments, search, filterStatus, filterType]);
 
   // ==================================================
   // FORM HELPERS
@@ -339,10 +375,7 @@ const TournamentManagement = () => {
     const { name, value } = event.target;
 
     setForm((previous) => {
-      const updated = {
-        ...previous,
-        [name]: value,
-      };
+      const updated = { ...previous, [name]: value };
 
       if (name === "type") {
         if (value === "TDM") {
@@ -372,13 +405,15 @@ const TournamentManagement = () => {
     });
   };
 
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId("");
+    setForm({ ...EMPTY_FORM, date: getTodayDate() });
+  };
+
   const openCreateForm = () => {
     setEditingId("");
-    setForm({
-      ...EMPTY_FORM,
-      date: getTodayDate(),
-      time: "10:00",
-    });
+    setForm({ ...EMPTY_FORM, date: getTodayDate(), time: "10:00" });
     setError("");
     setSuccess("");
     setShowForm(true);
@@ -392,7 +427,7 @@ const TournamentManagement = () => {
       mode: tournament.mode || "Solo",
       type: tournament.type || "Classic",
       map: tournament.map || "Erangel",
-      date: tournament.date || getTodayDate(),
+      date: String(tournament.date || getTodayDate()).slice(0, 10),
       time: getTimeInput(tournament.time) || "10:00",
       entryFee: String(tournament.entryFee ?? 0),
       prizePool: String(tournament.prizePool ?? 0),
@@ -408,16 +443,33 @@ const TournamentManagement = () => {
     setShowForm(true);
   };
 
-  const closeForm = () => {
+  const closeForm = useCallback(() => {
     if (saving) return;
+    resetForm();
+  }, [saving]);
 
-    setShowForm(false);
-    setEditingId("");
-    setForm({
-      ...EMPTY_FORM,
-      date: getTodayDate(),
-    });
-  };
+  // Close the form with the Escape key
+  useEffect(() => {
+    if (!showForm) return;
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && !confirmState) closeForm();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showForm, confirmState, closeForm]);
+
+  // Lock page scroll while the form is open
+  useEffect(() => {
+    if (!showForm) return;
+
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [showForm]);
 
   // ==================================================
   // COMMISSION
@@ -431,11 +483,7 @@ const TournamentManagement = () => {
     const collection = entry * slots;
     const commission = collection - prize;
 
-    return {
-      collection,
-      commission,
-      valid: commission >= 0,
-    };
+    return { collection, commission, valid: commission >= 0 };
   }, [form.entryFee, form.prizePool, form.totalSlots]);
 
   // ==================================================
@@ -444,48 +492,65 @@ const TournamentManagement = () => {
 
   const validateForm = (payload) => {
     if (!payload.name) {
-      throw new Error("Tournament name required hai.");
+      throw new Error("Tournament name is required.");
     }
 
     if (!Number.isFinite(payload.entryFee) || payload.entryFee < 0) {
-      throw new Error("Entry fee valid honi chahiye.");
+      throw new Error("Entry fee must be a valid amount.");
     }
 
     if (!Number.isFinite(payload.prizePool) || payload.prizePool < 0) {
-      throw new Error("Prize pool valid hona chahiye.");
+      throw new Error("Prize pool must be a valid amount.");
     }
 
     if (!Number.isFinite(payload.perKill) || payload.perKill < 0) {
-      throw new Error("Per kill amount valid hona chahiye.");
+      throw new Error("Per-kill amount must be a valid amount.");
     }
 
     if (!Number.isInteger(payload.totalSlots) || payload.totalSlots < 1) {
-      throw new Error("Total slots valid whole number hona chahiye.");
+      throw new Error("Total slots must be a whole number of at least 1.");
     }
 
-    if (!payload.date || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)) {
-      throw new Error("Invalid tournament date.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.date || "")) {
+      throw new Error("Please select a valid tournament date.");
     }
 
-    if (!payload.time || !/^\d{2}:\d{2}$/.test(payload.time)) {
-      throw new Error("Valid tournament time required hai.");
+    if (!editingId && payload.date < getTodayDate()) {
+      throw new Error("A new tournament cannot be scheduled in the past.");
+    }
+
+    if (!/^\d{2}:\d{2}$/.test(payload.time || "")) {
+      throw new Error("Please select a valid tournament time.");
+    }
+
+    if (payload.entryFee * payload.totalSlots < payload.prizePool) {
+      throw new Error(
+        "The prize pool cannot exceed the total entry collection."
+      );
+    }
+
+    if (editingId) {
+      const existing = tournaments.find((item) => item.id === editingId);
+      const joined = Number(existing?.joinedPlayers || 0);
+
+      if (payload.totalSlots < joined) {
+        throw new Error(
+          `Total slots cannot be lower than ${joined}, because that many players have already joined.`
+        );
+      }
     }
 
     if (payload.type === "TDM") {
       if (!TDM_MODES.some((item) => item.value === payload.mode)) {
-        throw new Error("Invalid TDM mode.");
+        throw new Error("Invalid TDM format selected.");
       }
 
       if (!TDM_MAPS.includes(payload.map)) {
-        throw new Error("Invalid TDM map.");
+        throw new Error("Invalid TDM map selected.");
       }
 
       if (payload.totalSlots !== getTdmSlots(payload.mode)) {
-        throw new Error("TDM player slots aur mode match nahi kar rahe.");
-      }
-
-      if (payload.entryFee * payload.totalSlots < payload.prizePool) {
-        throw new Error("Prize pool total entry collection se zyada nahi ho sakta.");
+        throw new Error("TDM player slots do not match the selected format.");
       }
     }
   };
@@ -496,6 +561,7 @@ const TournamentManagement = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (saving) return;
 
     setSaving(true);
     setError("");
@@ -523,39 +589,26 @@ const TournamentManagement = () => {
       if (editingId) {
         const result = await apiRequest(
           `/api/admin/tournaments/${encodeURIComponent(editingId)}`,
-          {
-            method: "PUT",
-            body: JSON.stringify(payload),
-          }
+          { method: "PUT", body: JSON.stringify(payload) }
         );
 
-        setSuccess(result.message || "Tournament successfully updated.");
+        setSuccess(result.message || "Tournament updated successfully.");
       } else {
         const id = makeId();
 
         await apiRequest("/api/admin/tournaments", {
           method: "POST",
-          body: JSON.stringify({
-            id,
-            ...payload,
-            published: false,
-          }),
+          body: JSON.stringify({ id, ...payload, published: false }),
         });
 
         setSuccess(`Tournament created successfully. ID: ${id}`);
       }
 
-      setShowForm(false);
-      setEditingId("");
-      setForm({
-        ...EMPTY_FORM,
-        date: getTodayDate(),
-      });
-
+      resetForm();
       await loadTournaments();
     } catch (err) {
       console.error("Save tournament error:", err);
-      setError(err.message || "Tournament save nahi hua.");
+      setError(err.message || "Unable to save the tournament.");
     } finally {
       setSaving(false);
     }
@@ -567,16 +620,18 @@ const TournamentManagement = () => {
 
   const changeVisibility = async (tournament) => {
     const isCurrentlyPublished =
-      Boolean(tournament.published) &&
-      !Boolean(tournament.is_hidden);
+      Boolean(tournament.published) && !tournament.is_hidden;
 
     const shouldPublish = !isCurrentlyPublished;
 
-    const confirmed = window.confirm(
-      shouldPublish
-        ? `Kya "${tournament.name}" ko publish/unhide karna hai?`
-        : `Kya "${tournament.name}" ko hide karna hai?`
-    );
+    const confirmed = await askConfirm({
+      title: shouldPublish ? "Publish this tournament?" : "Hide this tournament?",
+      message: shouldPublish
+        ? `"${tournament.name}" will become visible to players.`
+        : `"${tournament.name}" will no longer be visible to players.`,
+      confirmText: shouldPublish ? "Publish" : "Hide",
+      danger: !shouldPublish,
+    });
 
     if (!confirmed) return;
 
@@ -590,18 +645,18 @@ const TournamentManagement = () => {
         {
           method: "PATCH",
           body: JSON.stringify(
-            shouldPublish
-              ? { published: true }
-              : { hidden: true }
+            shouldPublish ? { published: true } : { hidden: true }
           ),
         }
       );
 
-      setSuccess(result.message || `${tournament.name} visibility updated.`);
+      setSuccess(
+        result.message || `Visibility updated for "${tournament.name}".`
+      );
       await loadTournaments();
     } catch (err) {
       console.error("Visibility update error:", err);
-      setError(err.message || "Visibility update nahi hui.");
+      setError(err.message || "Unable to update visibility.");
     } finally {
       setActionId("");
     }
@@ -612,22 +667,29 @@ const TournamentManagement = () => {
   // ==================================================
 
   const changeStatus = async (tournament, status) => {
+    if (status === tournament.status) return;
+
     if (status === "Completed") {
-      setError("Completed status ke liye Complete Tournament action use karna hoga.");
+      setError("Use the Complete Tournament action to mark a tournament as Completed.");
       return;
     }
 
-    if (
-      tournament.status === "Cancelled" ||
-      tournament.status === "Completed"
-    ) {
-      setError("Cancelled/Completed tournament ka status change nahi ho sakta.");
+    if (isLockedStatus(tournament.status)) {
+      setError("The status of a Cancelled or Completed tournament cannot be changed.");
       return;
     }
 
-    const confirmed = window.confirm(
-      `Kya "${tournament.name}" ka status ${status} karna hai?`
-    );
+    const extraWarning =
+      status === "Cancelled"
+        ? "\n\nA cancelled tournament cannot be changed again."
+        : "";
+
+    const confirmed = await askConfirm({
+      title: "Change tournament status?",
+      message: `"${tournament.name}" will be set to ${status}.${extraWarning}`,
+      confirmText: `Set ${status}`,
+      danger: status === "Cancelled",
+    });
 
     if (!confirmed) return;
 
@@ -638,17 +700,14 @@ const TournamentManagement = () => {
     try {
       const result = await apiRequest(
         `/api/admin/tournaments/${encodeURIComponent(tournament.id)}/status`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ status }),
-        }
+        { method: "PATCH", body: JSON.stringify({ status }) }
       );
 
       setSuccess(result.message || "Tournament status updated.");
       await loadTournaments();
     } catch (err) {
       console.error("Status update error:", err);
-      setError(err.message || "Status update nahi hua.");
+      setError(err.message || "Unable to update the status.");
       await loadTournaments();
     } finally {
       setActionId("");
@@ -661,14 +720,16 @@ const TournamentManagement = () => {
 
   const toggleDailyRepeat = async (tournament) => {
     const tournamentId = tournament.id;
-    const currentRule = dailyRules[tournamentId];
-    const newStatus = !Boolean(currentRule?.active);
+    const newStatus = !dailyRules[tournamentId]?.active;
 
-    const confirmed = window.confirm(
-      newStatus
-        ? `Kya "${tournament.name}" ke liye Daily Repeat ON karna hai?\n\nKal se har din naya tournament automatically create hoga.`
-        : `Kya "${tournament.name}" ka Daily Repeat OFF karna hai?\n\nFuture tournaments generate hona band ho jayenge.`
-    );
+    const confirmed = await askConfirm({
+      title: newStatus ? "Enable Daily Repeat?" : "Disable Daily Repeat?",
+      message: newStatus
+        ? `A new copy of "${tournament.name}" will be created automatically every day, starting tomorrow.`
+        : `"${tournament.name}" will stop generating new tournaments automatically.`,
+      confirmText: newStatus ? "Enable Daily" : "Disable Daily",
+      danger: !newStatus,
+    });
 
     if (!confirmed) return;
 
@@ -679,21 +740,18 @@ const TournamentManagement = () => {
     try {
       const result = await apiRequest(
         `/api/admin/tournaments/${encodeURIComponent(tournamentId)}/repeat-daily`,
-        {
-          method: "POST",
-          body: JSON.stringify({ enabled: newStatus }),
-        }
+        { method: "POST", body: JSON.stringify({ enabled: newStatus }) }
       );
 
       setSuccess(
         result.message ||
-        (newStatus ? "Daily repeat enabled." : "Daily repeat disabled.")
+          (newStatus ? "Daily repeat enabled." : "Daily repeat disabled.")
       );
 
       await loadTournaments();
     } catch (err) {
       console.error("Daily repeat error:", err);
-      setError(err.message || "Daily repeat status update nahi hua.");
+      setError(err.message || "Unable to update daily repeat.");
     } finally {
       setDailyActionId("");
     }
@@ -706,9 +764,11 @@ const TournamentManagement = () => {
   const duplicateTournament = async (tournament) => {
     const newId = makeId();
 
-    const confirmed = window.confirm(
-      `Kya "${tournament.name}" ki Draft copy create karni hai?\n\nNew ID: ${newId}`
-    );
+    const confirmed = await askConfirm({
+      title: "Duplicate this tournament?",
+      message: `A draft copy of "${tournament.name}" will be created.\n\nNew ID: ${newId}`,
+      confirmText: "Create Copy",
+    });
 
     if (!confirmed) return;
 
@@ -719,17 +779,14 @@ const TournamentManagement = () => {
     try {
       const result = await apiRequest(
         `/api/admin/tournaments/${encodeURIComponent(tournament.id)}/duplicate`,
-        {
-          method: "POST",
-          body: JSON.stringify({ newId }),
-        }
+        { method: "POST", body: JSON.stringify({ newId }) }
       );
 
       setSuccess(result.message || `Tournament duplicated. New ID: ${newId}`);
       await loadTournaments();
     } catch (err) {
       console.error("Duplicate error:", err);
-      setError(err.message || "Duplicate create nahi hua.");
+      setError(err.message || "Unable to duplicate the tournament.");
     } finally {
       setActionId("");
     }
@@ -740,9 +797,19 @@ const TournamentManagement = () => {
   // ==================================================
 
   const deleteTournament = async (tournament) => {
-    const confirmed = window.confirm(
-      `Kya tum "${tournament.name}" (${tournament.id}) delete karna chahte ho?\n\nServer RPC ke through player entry fees refund karke tournament delete karega.`
-    );
+    const joined = Number(tournament.joinedPlayers || 0);
+
+    const confirmed = await askConfirm({
+      title: "Delete this tournament?",
+      message:
+        `"${tournament.name}" (${tournament.id}) will be permanently deleted.\n\n` +
+        (joined > 0
+          ? `${joined} joined player${joined === 1 ? "" : "s"} will be refunded their entry fee.\n\n`
+          : "") +
+        "This action cannot be undone.",
+      confirmText: "Delete",
+      danger: true,
+    });
 
     if (!confirmed) return;
 
@@ -753,22 +820,20 @@ const TournamentManagement = () => {
     try {
       const result = await apiRequest(
         `/api/admin/tournaments/${encodeURIComponent(tournament.id)}`,
-        {
-          method: "DELETE",
-        }
+        { method: "DELETE" }
       );
 
       const refundedPlayers = Number(result.result?.refunded_players || 0);
       const totalRefunded = Number(result.result?.total_refunded || 0);
 
       setSuccess(
-        `Tournament deleted. ${refundedPlayers} players refunded. Total refund: ${money(totalRefunded)}`
+        `Tournament deleted. ${refundedPlayers} player${refundedPlayers === 1 ? "" : "s"} refunded, total ${money(totalRefunded)}.`
       );
 
       await loadTournaments();
     } catch (err) {
       console.error("Delete error:", err);
-      setError(err.message || "Tournament delete nahi hua.");
+      setError(err.message || "Unable to delete the tournament.");
     } finally {
       setActionId("");
     }
@@ -778,13 +843,8 @@ const TournamentManagement = () => {
   // STATISTICS
   // ==================================================
 
-  const stats = useMemo(() => {
-    const totalPlayers = tournaments.reduce(
-      (sum, item) => sum + Number(item.joinedPlayers || 0),
-      0
-    );
-
-    return {
+  const stats = useMemo(
+    () => ({
       total: tournaments.length,
       today: classifiedTournaments.today.length,
       upcoming: classifiedTournaments.upcoming.length,
@@ -792,20 +852,27 @@ const TournamentManagement = () => {
       published: tournaments.filter(
         (item) => item.published && !item.is_hidden
       ).length,
-      live: tournaments.filter((item) => item.status === "Live").length,
-      completed: tournaments.filter((item) => item.status === "Completed").length,
-      players: totalPlayers,
-    };
-  }, [tournaments, classifiedTournaments]);
+      players: tournaments.reduce(
+        (sum, item) => sum + Number(item.joinedPlayers || 0),
+        0
+      ),
+    }),
+    [tournaments, classifiedTournaments]
+  );
 
-  // ==================================================
-  // SECTION DETAILS
-  // ==================================================
+  const statCards = [
+    { key: "total", label: "TOTAL TOURNAMENTS", value: stats.total, icon: "▦", note: "All records" },
+    { key: "today", label: "TODAY", value: stats.today, icon: "◉", note: "Scheduled & live" },
+    { key: "upcoming", label: "UPCOMING", value: stats.upcoming, icon: "➜", note: "Future dates" },
+    { key: "history", label: "HISTORY", value: stats.history, icon: "↺", note: "Past & closed" },
+    { key: "published", label: "PUBLISHED", value: stats.published, icon: "✓", note: "Visible to players" },
+    { key: "players", label: "REGISTRATIONS", value: stats.players, icon: "♟", note: "Total joined" },
+  ];
 
   const sectionInfo = {
     today: {
       title: "Today's Tournaments",
-      description: `Showing tournaments scheduled for ${today} (India time).`,
+      description: `Tournaments scheduled for ${today} (India time) and all Live tournaments.`,
     },
     upcoming: {
       title: "Upcoming Tournaments",
@@ -817,20 +884,26 @@ const TournamentManagement = () => {
     },
   };
 
+  const anyActionRunning =
+    loading || Boolean(actionId) || Boolean(dailyActionId);
+
   // ==================================================
   // UI
   // ==================================================
 
   return (
     <div className="tournament-management">
-
       {/* HEADER */}
-
-      <div className="tm-header">
-        <div>
-          <div className="tm-eyebrow">ADMIN CONTROL CENTER</div>
-          <h1>Tournament Management</h1>
-          <p>Create, edit, publish and manage BGMI tournaments.</p>
+      <header className="tm-header">
+        <div className="tm-heading">
+          <div className="tm-eyebrow">
+            <span />
+            ADMIN CONTROL CENTER
+          </div>
+          <h1>
+            Tournament <em>Management</em>
+          </h1>
+          <p>Create, schedule, publish and manage BGMI tournaments.</p>
         </div>
 
         <div className="tm-header-actions">
@@ -838,9 +911,10 @@ const TournamentManagement = () => {
             type="button"
             className="tm-btn tm-btn-secondary"
             onClick={() => loadTournaments(true)}
-            disabled={loading || Boolean(actionId) || Boolean(dailyActionId)}
+            disabled={anyActionRunning}
           >
-            ↻ Refresh
+            <span className={loading ? "tm-spin" : ""}>↻</span>
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
 
           <button
@@ -851,69 +925,64 @@ const TournamentManagement = () => {
             + Create Tournament
           </button>
         </div>
-      </div>
+      </header>
 
       {/* ALERTS */}
-
-      {error && (
+      {error && !showForm && (
         <div className="tm-alert tm-alert-error" role="alert">
-          ⚠️ {error}
+          <span className="tm-alert-icon">!</span>
+          <span className="tm-alert-text">{error}</span>
+          <button type="button" onClick={() => setError("")} aria-label="Dismiss">
+            ×
+          </button>
         </div>
       )}
 
       {success && (
         <div className="tm-alert tm-alert-success" role="status">
-          ✓ {success}
+          <span className="tm-alert-icon">✓</span>
+          <span className="tm-alert-text">{success}</span>
+          <button type="button" onClick={() => setSuccess("")} aria-label="Dismiss">
+            ×
+          </button>
         </div>
       )}
 
       {/* STATISTICS */}
-
-      <div className="tm-stats-grid">
-        <div className="tm-stat-card">
-          <span>Total Tournaments</span>
-          <strong>{stats.total}</strong>
-        </div>
-
-        <div className="tm-stat-card">
-          <span>Today's Tournaments</span>
-          <strong>{stats.today}</strong>
-        </div>
-
-        <div className="tm-stat-card">
-          <span>Upcoming</span>
-          <strong>{stats.upcoming}</strong>
-        </div>
-
-        <div className="tm-stat-card">
-          <span>History</span>
-          <strong>{stats.history}</strong>
-        </div>
-
-        <div className="tm-stat-card">
-          <span>Published</span>
-          <strong>{stats.published}</strong>
-        </div>
-
-        <div className="tm-stat-card">
-          <span>Total Registrations</span>
-          <strong>{stats.players}</strong>
-        </div>
-      </div>
+      <section className="tm-stats-grid">
+        {statCards.map((card) => (
+          <div key={card.key} className={`tm-stat-card ${card.key}`}>
+            <div className="tm-stat-top">
+              <span>{card.label}</span>
+              <i>{card.icon}</i>
+            </div>
+            <strong>{card.value}</strong>
+            <small>{card.note}</small>
+          </div>
+        ))}
+      </section>
 
       {/* CREATE / EDIT FORM */}
-
       {showForm && (
         <div className="tm-form-overlay">
-          <div className="tm-form-card">
-
+          <div
+            className="tm-form-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tm-form-title"
+          >
             <div className="tm-form-heading">
               <div>
-                <h2>{editingId ? "Edit Tournament" : "Create Tournament"}</h2>
+                <div className="tm-kicker">
+                  {editingId ? "EDIT MODE" : "NEW TOURNAMENT"}
+                </div>
+                <h2 id="tm-form-title">
+                  {editingId ? "Edit Tournament" : "Create Tournament"}
+                </h2>
                 <p>
                   {editingId
-                    ? `Editing tournament ${editingId}`
-                    : "New tournament database mein save hoga."}
+                    ? `Editing tournament #${editingId}`
+                    : "The new tournament will be saved as a draft."}
                 </p>
               </div>
 
@@ -928,9 +997,15 @@ const TournamentManagement = () => {
               </button>
             </div>
 
+            {error && (
+              <div className="tm-alert tm-alert-error" role="alert">
+                <span className="tm-alert-icon">!</span>
+                <span className="tm-alert-text">{error}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit}>
               <div className="tm-form-grid">
-
                 <label className="tm-field tm-field-full">
                   <span>Tournament Name *</span>
                   <input
@@ -938,6 +1013,7 @@ const TournamentManagement = () => {
                     value={form.name}
                     onChange={updateField}
                     placeholder="Enter tournament name"
+                    maxLength={80}
                     required
                   />
                 </label>
@@ -973,26 +1049,31 @@ const TournamentManagement = () => {
                 <label className="tm-field">
                   <span>Map</span>
                   <select name="map" value={form.map} onChange={updateField}>
-                    {(form.type === "TDM" ? TDM_MAPS : CLASSIC_MAPS).map((map) => (
-                      <option key={map} value={map}>{map}</option>
-                    ))}
+                    {(form.type === "TDM" ? TDM_MAPS : CLASSIC_MAPS).map(
+                      (map) => (
+                        <option key={map} value={map}>
+                          {map}
+                        </option>
+                      )
+                    )}
                   </select>
                 </label>
 
                 <label className="tm-field">
-                  <span>Tournament Date (Automatic)</span>
+                  <span>Tournament Date *</span>
                   <input
                     type="date"
                     name="date"
                     value={form.date}
-                    readOnly
+                    min={editingId ? undefined : today}
+                    onChange={updateField}
                     required
                   />
-                  <small>Today's India date automatically selected.</small>
+                  <small>Defaults to today's India date. You can pick a future date.</small>
                 </label>
 
                 <label className="tm-field">
-                  <span>Tournament Time</span>
+                  <span>Tournament Time *</span>
                   <input
                     type="time"
                     name="time"
@@ -1044,7 +1125,11 @@ const TournamentManagement = () => {
                 )}
 
                 <label className="tm-field">
-                  <span>{form.type === "TDM" ? "Total Players (Automatic)" : "Total Slots"}</span>
+                  <span>
+                    {form.type === "TDM"
+                      ? "Total Players (Automatic)"
+                      : "Total Slots"}
+                  </span>
                   <input
                     type="number"
                     name="totalSlots"
@@ -1056,12 +1141,14 @@ const TournamentManagement = () => {
                     required
                   />
                   {form.type === "TDM" && (
-                    <small>Players automatically selected according to TDM format.</small>
+                    <small>
+                      Set automatically from the selected TDM format.
+                    </small>
                   )}
                 </label>
 
                 <div className="tm-field tm-field-full">
-                  <span>Collection & Admin Commission Preview</span>
+                  <span>Collection &amp; Admin Commission Preview</span>
                   <div className="tm-commission-preview">
                     <div>
                       <small>Total Collection</small>
@@ -1073,24 +1160,40 @@ const TournamentManagement = () => {
                     </div>
                     <div>
                       <small>Admin Commission</small>
-                      <strong style={{
-                        color: commissionPreview.valid ? "#22c55e" : "#ff304f",
-                      }}>
+                      <strong
+                        className={
+                          commissionPreview.valid
+                            ? "tm-commission-ok"
+                            : "tm-commission-bad"
+                        }
+                      >
                         {money(commissionPreview.commission)}
                       </strong>
                     </div>
                   </div>
                   <small>
-                    Total players × Entry fee − Winner prize.
-                    Actual collection depends on successful registrations.
+                    Total players × entry fee − winner prize. Actual collection
+                    depends on successful registrations.
                   </small>
+                  {!commissionPreview.valid && (
+                    <small className="tm-commission-bad">
+                      The prize pool exceeds the total collection, so this
+                      tournament cannot be saved.
+                    </small>
+                  )}
                 </div>
 
                 <label className="tm-field">
                   <span>Tournament Status</span>
-                  <select name="status" value={form.status} onChange={updateField}>
+                  <select
+                    name="status"
+                    value={form.status}
+                    onChange={updateField}
+                  >
                     {STATUSES.map((status) => (
-                      <option key={status} value={status}>{status}</option>
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -1116,7 +1219,6 @@ const TournamentManagement = () => {
                     placeholder="Tournament rules and details..."
                   />
                 </label>
-
               </div>
 
               <div className="tm-form-actions">
@@ -1146,56 +1248,104 @@ const TournamentManagement = () => {
         </div>
       )}
 
+      {/* CUSTOM CONFIRM DIALOG */}
+      {confirmState && (
+        <div
+          className="tm-confirm-backdrop"
+          onClick={() => closeConfirm(false)}
+        >
+          <div
+            className="tm-confirm"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="tm-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              className={`tm-confirm-icon ${
+                confirmState.danger ? "danger" : ""
+              }`}
+            >
+              {confirmState.danger ? "!" : "?"}
+            </div>
+
+            <div className="tm-kicker">ADMIN CONFIRMATION</div>
+
+            <h3 id="tm-confirm-title">
+              {confirmState.title || "Please confirm"}
+            </h3>
+
+            <p>{confirmState.message}</p>
+
+            <div className="tm-confirm-actions">
+              <button
+                type="button"
+                className="tm-btn tm-btn-secondary"
+                onClick={() => closeConfirm(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                autoFocus
+                className={`tm-btn ${
+                  confirmState.danger ? "tm-btn-danger" : "tm-btn-primary"
+                }`}
+                onClick={() => closeConfirm(true)}
+              >
+                {confirmState.confirmText || "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SECTION TABS */}
-
-      <div className="tm-section-tabs">
-        <button
-          type="button"
-          className={activeSection === "today" ? "active" : ""}
-          onClick={() => setActiveSection("today")}
-        >
-          Today's Tournaments
-          <span>{stats.today}</span>
-        </button>
-
-        <button
-          type="button"
-          className={activeSection === "upcoming" ? "active" : ""}
-          onClick={() => setActiveSection("upcoming")}
-        >
-          Upcoming
-          <span>{stats.upcoming}</span>
-        </button>
-
-        <button
-          type="button"
-          className={activeSection === "history" ? "active" : ""}
-          onClick={() => setActiveSection("history")}
-        >
-          Tournament History
-          <span>{stats.history}</span>
-        </button>
+      <div className="tm-section-tabs" role="tablist">
+        {[
+          ["today", "Today", stats.today],
+          ["upcoming", "Upcoming", stats.upcoming],
+          ["history", "History", stats.history],
+        ].map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={activeSection === key}
+            className={activeSection === key ? "active" : ""}
+            onClick={() => setActiveSection(key)}
+          >
+            {label}
+            <span>{count}</span>
+          </button>
+        ))}
       </div>
 
       {/* TOOLBAR */}
-
       <div className="tm-toolbar">
         <div>
+          <div className="tm-kicker">TOURNAMENT DATABASE</div>
           <h2>{sectionInfo[activeSection].title}</h2>
           <p>{sectionInfo[activeSection].description}</p>
         </div>
 
         <div className="tm-filters">
-          <input
-            type="search"
-            placeholder="Search name or tournament ID..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className="tm-search">
+            <span>⌕</span>
+            <input
+              type="search"
+              placeholder="Search name or tournament ID..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              aria-label="Search tournaments"
+            />
+          </div>
 
           <select
             value={filterType}
             onChange={(event) => setFilterType(event.target.value)}
+            aria-label="Filter by type"
           >
             <option value="All">All Types</option>
             <option value="Classic">Classic</option>
@@ -1206,18 +1356,21 @@ const TournamentManagement = () => {
           <select
             value={filterStatus}
             onChange={(event) => setFilterStatus(event.target.value)}
+            aria-label="Filter by status"
           >
             <option value="All">All Statuses</option>
             {[...STATUSES, "Completed"].map((status) => (
-              <option key={status} value={status}>{status}</option>
+              <option key={status} value={status}>
+                {status}
+              </option>
             ))}
           </select>
         </div>
       </div>
 
       {/* TOURNAMENT TABLE */}
-
       <div className="tm-table-wrap">
+        <div className="tm-table-scroll">
         <table className="tm-table">
           <thead>
             <tr>
@@ -1237,17 +1390,20 @@ const TournamentManagement = () => {
             {loading ? (
               <tr>
                 <td colSpan="9" className="tm-empty">
+                  <span className="tm-loader" />
                   Loading tournaments...
                 </td>
               </tr>
             ) : filteredTournaments.length === 0 ? (
               <tr>
                 <td colSpan="9" className="tm-empty">
-                  {activeSection === "today"
-                    ? "Aaj koi tournament nahi hai."
-                    : activeSection === "upcoming"
-                      ? "Koi upcoming tournament nahi hai."
-                      : "Tournament history empty hai."}
+                  {search || filterType !== "All" || filterStatus !== "All"
+                    ? "No tournaments match your search or filters."
+                    : activeSection === "today"
+                      ? "There are no tournaments today."
+                      : activeSection === "upcoming"
+                        ? "There are no upcoming tournaments."
+                        : "Tournament history is empty."}
                 </td>
               </tr>
             ) : (
@@ -1255,28 +1411,22 @@ const TournamentManagement = () => {
                 const busy = actionId === tournament.id;
                 const dailyBusy = dailyActionId === tournament.id;
 
-                const dailyActive = Boolean(
-                  dailyRules[tournament.id]?.active
-                );
-
+                const dailyActive = Boolean(dailyRules[tournament.id]?.active);
                 const nextDailyDate =
                   dailyRules[tournament.id]?.next_run_date || "";
 
-                const isLocked =
-                  tournament.status === "Completed" ||
-                  tournament.status === "Cancelled";
-
-                const visibilityLabel =
-                  getVisibilityLabel(tournament);
+                const isLocked = isLockedStatus(tournament.status);
+                const isVisible =
+                  Boolean(tournament.published) && !tournament.is_hidden;
 
                 return (
                   <tr key={tournament.id}>
                     <td>
                       <strong>{tournament.name}</strong>
-                      <small>#{tournament.id}</small>
+                      <code className="tm-id">#{tournament.id}</code>
                       {tournament.date && (
                         <small>
-                          {tournament.date}
+                          {String(tournament.date).slice(0, 10)}
                           {tournament.time
                             ? ` • ${getTimeInput(tournament.time)}`
                             : ""}
@@ -1285,27 +1435,34 @@ const TournamentManagement = () => {
                     </td>
 
                     <td>
-                      <strong>{tournament.type || "Classic"}</strong>
-                      <small>{tournament.mode || "—"}</small>
-                      <small>{tournament.map || "—"}</small>
+                      <span className="tm-type-chip">
+                        {tournament.type || "Classic"}
+                      </span>
+                      <small>
+                        {tournament.mode || "—"} · {tournament.map || "—"}
+                      </small>
                     </td>
 
-                    <td>{money(tournament.entryFee)}</td>
-                    <td>{money(tournament.prizePool)}</td>
+                    <td className="tm-money">{money(tournament.entryFee)}</td>
+                    <td className="tm-money">{money(tournament.prizePool)}</td>
 
                     <td>
                       <strong>
                         {tournament.joinedPlayers || 0}
-                        {" / "}
-                        {tournament.totalSlots || 50}
+                        <span className="tm-slots">
+                          {" / "}
+                          {tournament.totalSlots || 50}
+                        </span>
                       </strong>
                     </td>
 
                     <td>
                       <select
                         className="tm-status-select"
+                        data-status={tournament.status || "Draft"}
                         value={tournament.status || "Draft"}
                         disabled={busy || isLocked}
+                        aria-label={`Status of ${tournament.name}`}
                         onChange={(event) =>
                           changeStatus(tournament, event.target.value)
                         }
@@ -1331,7 +1488,8 @@ const TournamentManagement = () => {
                               : "is-unpublished"
                         }`}
                       >
-                        {visibilityLabel}
+                        <i />
+                        {getVisibilityLabel(tournament)}
                       </span>
                     </td>
 
@@ -1348,17 +1506,10 @@ const TournamentManagement = () => {
                         <button
                           type="button"
                           className={`tm-action-btn ${
-                            dailyActive
-                              ? "tm-daily-disable"
-                              : "tm-daily-enable"
+                            dailyActive ? "tm-daily-disable" : "tm-daily-enable"
                           }`}
                           onClick={() => toggleDailyRepeat(tournament)}
-                          disabled={
-                            busy ||
-                            dailyBusy ||
-                            tournament.status === "Completed" ||
-                            tournament.status === "Cancelled"
-                          }
+                          disabled={busy || dailyBusy || isLocked}
                         >
                           {dailyBusy
                             ? "Please wait..."
@@ -1369,7 +1520,7 @@ const TournamentManagement = () => {
 
                         {dailyActive && nextDailyDate && (
                           <small className="tm-daily-date">
-                            Next: {nextDailyDate}
+                            Next run: {nextDailyDate}
                           </small>
                         )}
                       </div>
@@ -1392,11 +1543,7 @@ const TournamentManagement = () => {
                           onClick={() => changeVisibility(tournament)}
                           disabled={busy || isLocked}
                         >
-                          {busy
-                            ? "..."
-                            : tournament.published && !tournament.is_hidden
-                              ? "Hide"
-                              : "Publish"}
+                          {busy ? "..." : isVisible ? "Hide" : "Publish"}
                         </button>
 
                         <button
@@ -1424,18 +1571,21 @@ const TournamentManagement = () => {
             )}
           </tbody>
         </table>
+        </div>
+
+        <div className="tm-table-footer">
+          <span>
+            Showing <strong>{filteredTournaments.length}</strong> of{" "}
+            <strong>{tournaments.length}</strong> tournaments
+          </span>
+          <span>
+            India date: <strong>{today}</strong>
+          </span>
+          <span className="tm-db-status">
+            <i /> SUPABASE
+          </span>
+        </div>
       </div>
-
-      {/* FOOTER */}
-
-      <div className="tm-footer">
-        <span>Database: <strong>Supabase</strong></span>
-        <span>API: <strong>Port 5005</strong></span>
-        <span>India Date: <strong>{today}</strong></span>
-        <span>Total records: <strong>{tournaments.length}</strong></span>
-        <span>Showing: <strong>{filteredTournaments.length}</strong></span>
-      </div>
-
     </div>
   );
 };

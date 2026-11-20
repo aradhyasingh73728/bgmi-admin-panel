@@ -1,32 +1,78 @@
-// src/components/Topbar.jsx
+
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./Topbar.css";
 
+const getIndianDateTime = () => {
+  return new Date().toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+};
+
 const Topbar = () => {
-  const now = new Date().toLocaleString();
   const navigate = useNavigate();
+  const [currentTime, setCurrentTime] = useState(getIndianDateTime());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(getIndianDateTime());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const handleLogout = () => {
-    // admin flag hatao
     localStorage.removeItem("bgmi_admin_logged_in");
-    // login page pe bhejo
     navigate("/admin-login", { replace: true });
   };
 
   return (
-    <div className="topbar">
+    <header className="topbar">
       <div className="topbar-left">
-        <h1 className="topbar-title">BGMI Esports Control Room</h1>
-        
+        <div className="topbar-heading-icon">🎮</div>
+
+        <div className="topbar-heading-content">
+          <h1 className="topbar-title">
+            BGMI Esports Control Panel
+          </h1>
+          <p className="topbar-subtitle">
+            Tournament Administration Dashboard
+          </p>
+        </div>
       </div>
+
       <div className="topbar-right">
-        <span className="topbar-time">{now}</span>
-        <span className="topbar-badge">ADMIN</span>
-        <button className="logout-btn" onClick={handleLogout}>
-          Logout
+        <div className="topbar-clock">
+          <span className="topbar-clock-icon">◷</span>
+          <div className="topbar-clock-content">
+            <span className="topbar-time">{currentTime}</span>
+            <span className="topbar-timezone">INDIAN STANDARD TIME</span>
+          </div>
+        </div>
+
+        <div className="topbar-badge">
+          <span className="topbar-status-dot"></span>
+          ADMIN
+        </div>
+
+        <button
+          type="button"
+          className="logout-btn"
+          onClick={handleLogout}
+          aria-label="Logout from admin panel"
+        >
+          <span className="logout-icon">↪</span>
+          <span>Logout</span>
         </button>
       </div>
-    </div>
+    </header>
   );
 };
 

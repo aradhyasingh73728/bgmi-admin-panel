@@ -12,7 +12,6 @@ import "./TournamentResults.css";
 // API CONFIG
 // ============================================================
 
-
 const API_BASE = (
   import.meta.env.VITE_TOURNAMENT_API_URL ||
   (window.location.hostname === "localhost"
@@ -70,7 +69,6 @@ function getIndiaDate() {
 
 // ============================================================
 // RESULTS PAGE FILTER
-// Only today's Live and Completed tournaments
 // ============================================================
 
 const isEligibleForResults = (tournament) => {
@@ -84,16 +82,16 @@ const isEligibleForResults = (tournament) => {
     getTournamentStatus(tournament)
   );
 
-  const isToday = tournamentDate === today;
-
-  const isLiveOrCompleted =
-    status === "live" ||
-    status === "completed";
-
-  return isToday && isLiveOrCompleted;
+  return (
+    tournamentDate === today &&
+    (status === "live" || status === "completed")
+  );
 };
 
-// Supports both tournament type and match type fields.
+// ============================================================
+// MATCH TYPE
+// ============================================================
+
 const getMatchType = (tournament) => {
   const value = String(
     tournament?.match_type ||
@@ -104,8 +102,10 @@ const getMatchType = (tournament) => {
   return value.includes("tdm") ? "TDM" : "Classic";
 };
 
-// BGMI name and profile information can have different
-// field names depending on the registration API.
+// ============================================================
+// PLAYER HELPERS
+// ============================================================
+
 const getBgmiName = (player) =>
   player?.bgmi_name ||
   player?.player_bgmi_name ||
@@ -142,6 +142,62 @@ const TournamentResults = () => {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // CUSTOM CONFIRMATION MODAL
+  const [confirmModal, setConfirmModal] = useState(null);
+
+  // ==========================================================
+  // CUSTOM CONFIRMATION
+  // ==========================================================
+
+  const openConfirmModal = (type) => {
+    if (actionLoading) return;
+
+    if (type === "publish") {
+      setConfirmModal({
+        type: "publish",
+        title: "Publish Tournament Results?",
+        message:
+          "Are you sure you want to publish these results? Winning amounts will be credited to player wallets. This action cannot be reversed.",
+        confirmText: "Publish Results",
+        variant: "publish",
+        icon: "🚀",
+      });
+    }
+
+    if (type === "complete") {
+      setConfirmModal({
+        type: "complete",
+        title: "Complete Tournament?",
+        message:
+          "Please confirm that all player results and wallet payouts have been verified. Completing this tournament will lock it permanently.",
+        confirmText: "Complete Tournament",
+        variant: "complete",
+        icon: "🏆",
+      });
+    }
+  };
+
+  const closeConfirmModal = () => {
+    if (actionLoading) return;
+    setConfirmModal(null);
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmModal || actionLoading) return;
+
+    const type = confirmModal.type;
+
+    setConfirmModal(null);
+
+    if (type === "publish") {
+      await publishResults();
+    }
+
+    if (type === "complete") {
+      await completeTournament();
+    }
+  };
 
   // ==========================================================
   // AUTHENTICATED API REQUEST
@@ -217,12 +273,10 @@ const TournamentResults = () => {
         "/api/admin/tournaments"
       );
 
-      // Backend se all tournaments receive honge.
       const allTournaments = Array.isArray(data.tournaments)
         ? data.tournaments
         : [];
 
-      // Results page ke liye sirf today's Live + Completed.
       const eligibleTournaments = allTournaments.filter(
         isEligibleForResults
       );
@@ -286,10 +340,10 @@ const TournamentResults = () => {
   );
 
   const selectedTournamentId =
-  getTournamentId(selectedTournament);
+    getTournamentId(selectedTournament);
 
   useEffect(() => {
-  const id = selectedTournamentId;
+    const id = selectedTournamentId;
 
     if (!id) {
       setPlayers([]);
@@ -351,10 +405,10 @@ const TournamentResults = () => {
     return () => {
       cancelled = true;
     };
-}, [
-  selectedTournamentId,
-  loadPlayersAgain,
-]);
+  }, [
+    selectedTournamentId,
+    loadPlayersAgain,
+  ]);
 
   // ==========================================================
   // RELOAD CURRENT PLAYERS
@@ -767,14 +821,6 @@ const TournamentResults = () => {
         }
       }
 
-      const confirmPublish = window.confirm(
-        isTDM
-          ? "Publish TDM results and credit the selected winner(s)? Please verify the winning players and amounts."
-          : "Publish Classic results and credit winning amounts to player wallets? This action cannot be reversed."
-      );
-
-      if (!confirmPublish) return;
-
       setActionLoading(true);
       setError("");
       setSuccess("");
@@ -856,12 +902,6 @@ const TournamentResults = () => {
         );
       }
 
-      const confirmComplete = window.confirm(
-        "Confirm that all player results and wallet payouts are correct. Complete this tournament?"
-      );
-
-      if (!confirmComplete) return;
-
       setActionLoading(true);
       setError("");
       setSuccess("");
@@ -885,7 +925,7 @@ const TournamentResults = () => {
 
       setSuccess(
         data.message ||
-        "Tournament completion request successful."
+        "Tournament completed successfully."
       );
 
       await fetchTournaments();
@@ -987,14 +1027,16 @@ const TournamentResults = () => {
         </button>
       </div>
 
-      {/* ALERTS */}
+      {/* CUSTOM ERROR NOTIFICATION */}
 
       {error && (
         <div className="tr-error" role="alert">
+          <span className="tr-alert-icon">!</span>
           <span>{error}</span>
 
           <button
             type="button"
+            aria-label="Dismiss error"
             onClick={() => setError("")}
           >
             ✕
@@ -1002,12 +1044,16 @@ const TournamentResults = () => {
         </div>
       )}
 
+      {/* CUSTOM SUCCESS NOTIFICATION */}
+
       {success && (
         <div className="tr-success" role="status">
+          <span className="tr-alert-icon">✓</span>
           <span>{success}</span>
 
           <button
             type="button"
+            aria-label="Dismiss success"
             onClick={() => setSuccess("")}
           >
             ✕
@@ -1551,7 +1597,7 @@ const TournamentResults = () => {
               <button
                 className="tr-action-btn publish"
                 type="button"
-                onClick={publishResults}
+                onClick={() => openConfirmModal("publish")}
                 disabled={
                   actionLoading ||
                   playersLoading ||
@@ -1566,7 +1612,7 @@ const TournamentResults = () => {
               <button
                 className="tr-action-btn complete"
                 type="button"
-                onClick={completeTournament}
+                onClick={() => openConfirmModal("complete")}
                 disabled={
                   actionLoading ||
                   playersLoading ||
@@ -1591,6 +1637,88 @@ const TournamentResults = () => {
             </p>
           </div>
         </>
+      )}
+
+      {/* =====================================================
+          CUSTOM CONFIRMATION MODAL
+      ===================================================== */}
+
+      {confirmModal && (
+        <div
+          className="tr-modal-overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeConfirmModal();
+            }
+          }}
+        >
+          <div
+            className="tr-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tr-modal-title"
+            aria-describedby="tr-modal-message"
+          >
+            <button
+              type="button"
+              className="tr-modal-close"
+              onClick={closeConfirmModal}
+              disabled={actionLoading}
+              aria-label="Close confirmation"
+            >
+              ✕
+            </button>
+
+            <div
+              className={`tr-modal-icon ${confirmModal.variant}`}
+            >
+              {confirmModal.icon}
+            </div>
+
+            <h2 id="tr-modal-title">
+              {confirmModal.title}
+            </h2>
+
+            <p id="tr-modal-message">
+              {confirmModal.message}
+            </p>
+
+            <div className="tr-modal-details">
+              <span>TOURNAMENT</span>
+              <strong>{tournamentName}</strong>
+
+              <span>REGISTERED PLAYERS</span>
+              <strong>{totalPlayers}</strong>
+            </div>
+
+            <div className="tr-modal-actions">
+              <button
+                type="button"
+                className="tr-modal-cancel"
+                onClick={closeConfirmModal}
+                disabled={actionLoading}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className={`tr-modal-confirm ${confirmModal.variant}`}
+                onClick={handleConfirmAction}
+                disabled={actionLoading}
+              >
+                {actionLoading
+                  ? "Please wait..."
+                  : confirmModal.confirmText}
+              </button>
+            </div>
+
+            <div className="tr-modal-security">
+              <span>🔒</span>
+              Please verify all details before proceeding.
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+
 import React, {
   useCallback,
   useEffect,
@@ -5,24 +6,19 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  useNavigate,
-  useParams,
-} from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
-import "./../styles/tournamentDetail.css";
+import "./AdminTournamentDetail.css";
 
 // ============================================================
-// 5004 ADMIN SERVER
+// API CONFIGURATION
 // ============================================================
+
 const ADMIN_API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5004"
     : "https://bgmi-admin-dashboard-server-5004.onrender.com";
 
-// ============================================================
-// ADMIN JWT AUTH CONFIG
-// ============================================================
 const getAdminAuthConfig = () => {
   const token = localStorage.getItem("adminToken");
 
@@ -36,6 +32,7 @@ const getAdminAuthConfig = () => {
 // ============================================================
 // HELPERS
 // ============================================================
+
 const currency = (value) =>
   `₹${Number(value || 0).toLocaleString("en-IN")}`;
 
@@ -47,11 +44,7 @@ const safeNumber = (value, fallback = 0) => {
 const getPerKill = (tournament) =>
   Math.max(
     0,
-    safeNumber(
-      tournament?.per_kill ??
-        tournament?.perKill ??
-        0
-    )
+    safeNumber(tournament?.per_kill ?? tournament?.perKill ?? 0)
   );
 
 const getWinnerPrize = (tournament) =>
@@ -78,295 +71,168 @@ const getMaxSlots = (tournament) => {
 };
 
 const normalizeResult = (result) => ({
-  kills: Math.max(
-    0,
-    Math.floor(
-      safeNumber(result?.kills, 0)
-    )
-  ),
-
-  isWinner: Boolean(
-    result?.is_winner
-  ),
-
-  killAmount: safeNumber(
-    result?.kill_amount,
-    0
-  ),
-
-  winnerPrize: safeNumber(
-    result?.winner_prize,
-    0
-  ),
-
-  totalWinning: safeNumber(
-    result?.total_winning,
-    0
-  ),
-
-  status:
-    result?.status || "",
+  kills: Math.max(0, Math.floor(safeNumber(result?.kills, 0))),
+  isWinner: Boolean(result?.is_winner),
+  killAmount: safeNumber(result?.kill_amount, 0),
+  winnerPrize: safeNumber(result?.winner_prize, 0),
+  totalWinning: safeNumber(result?.total_winning, 0),
+  status: result?.status || "",
 });
+
+const isSettledTournament = (tournament) => {
+  const status = String(tournament?.status || "").toLowerCase();
+
+  return (
+    tournament?.settled === true ||
+    tournament?.is_settled === true ||
+    tournament?.results_settled === true ||
+    tournament?.resultsSettled === true ||
+    tournament?.settlement_completed === true ||
+    status === "settled" ||
+    status === "paid"
+  );
+};
+
+const hasPaidResults = (results) =>
+  results.some((result) => {
+    const status = String(
+      result?.status || result?.result_status || ""
+    ).toLowerCase();
+
+    return status === "paid" || status === "settled";
+  });
 
 // ============================================================
 // COMPONENT
 // ============================================================
+
 const AdminTournamentDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  // ==========================================================
-  // STATE
-  // ==========================================================
-  const [tournament, setTournament] =
-    useState(null);
+  const [tournament, setTournament] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [results, setResults] = useState({});
 
-  const [users, setUsers] =
-    useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actionId, setActionId] = useState("");
+  const [savingResults, setSavingResults] = useState(false);
+  const [settling, setSettling] = useState(false);
 
-  const [results, setResults] =
-    useState({});
+  const [message, setMessage] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [actionId, setActionId] =
-    useState("");
-
-  const [savingResults, setSavingResults] =
+  const [resultSystemAvailable, setResultSystemAvailable] =
     useState(false);
 
-  const [settling, setSettling] =
-    useState(false);
-
-  const [message, setMessage] =
-    useState("");
-
-  const [errorMsg, setErrorMsg] =
-    useState("");
-
-  const [
-    resultSystemAvailable,
-    setResultSystemAvailable,
-  ] = useState(false);
-
-  // Server se pata chalne wala result lock
   const [serverResultsLocked, setServerResultsLocked] =
     useState(false);
 
-  // Double click / duplicate save protection
+  const [confirmAction, setConfirmAction] = useState(null);
+
   const saveResultsLock = useRef(false);
+  const settlementLock = useRef(false);
 
   // ==========================================================
   // LOAD TOURNAMENT
   // ==========================================================
-  const loadData = useCallback(
-    async () => {
-      if (!id) {
-        return;
-      }
 
-      setLoading(true);
+  const loadData = useCallback(async () => {
+    if (!id) {
+      setLoading(false);
+      return;
+    }
 
-      try {
-        setErrorMsg("");
+    setLoading(true);
 
-        const response = await axios.get(
-          `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
-            id
-          )}`,
-          {
-  ...getAdminAuthConfig(),
-  timeout: 10000,
-}
-        );
+    try {
+      setErrorMsg("");
 
-        const data = response.data || {};
+      const response = await axios.get(
+        `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(id)}`,
+        {
+          ...getAdminAuthConfig(),
+          timeout: 10000,
+        }
+      );
 
-        // ------------------------------------------------------
-        // USERS
-        // ------------------------------------------------------
-        const incomingUsers =
-          Array.isArray(data.users)
-            ? data.users
-            : [];
+      const data = response.data || {};
 
-        // ------------------------------------------------------
-        // RESULTS
-        // ------------------------------------------------------
-        const incomingResults =
-          Array.isArray(data.results)
-            ? data.results
-            : [];
+      const incomingUsers = Array.isArray(data.users)
+        ? data.users
+        : [];
 
-        setResultSystemAvailable(
-          data.resultSystemAvailable !== false
-        );
+      const incomingResults = Array.isArray(data.results)
+        ? data.results
+        : [];
 
-        // ------------------------------------------------------
-        // RESULT LOCK
-        // ------------------------------------------------------
-        const hasPaidResult =
-          incomingResults.some(
-            (result) => {
-              const status = String(
-                result?.status ||
-                  result?.result_status ||
-                  ""
-              ).toLowerCase();
+      setResultSystemAvailable(
+        data.resultSystemAvailable !== false
+      );
 
-              return (
-                status === "paid" ||
-                status === "settled"
-              );
-            }
-          );
+      const locked =
+        hasPaidResults(incomingResults) ||
+        isSettledTournament(data.tournament || {});
 
-        const tournamentData =
-          data.tournament || {};
+      setServerResultsLocked(locked);
 
-        const tournamentStatus =
-          String(
-            tournamentData?.status || ""
-          ).toLowerCase();
+      const resultMap = {};
 
-        const tournamentIsSettled =
-          tournamentData?.settled === true ||
-          tournamentData?.is_settled === true ||
-          tournamentData?.results_settled === true ||
-          tournamentData?.resultsSettled === true ||
-          tournamentData?.settlement_completed === true ||
-          tournamentStatus === "settled" ||
-          tournamentStatus === "paid";
+      incomingResults.forEach((result) => {
+        resultMap[String(result.join_id)] =
+          normalizeResult(result);
+      });
 
-        setServerResultsLocked(
-          hasPaidResult ||
-            tournamentIsSettled
-        );
+      const mergedUsers = incomingUsers.map((user) => {
+        const saved = resultMap[String(user.id)];
 
-        // ------------------------------------------------------
-        // RESULT MAP
-        // ------------------------------------------------------
-        const resultMap = {};
+        return {
+          ...user,
+          resultStatus: saved?.status || "",
+          kills:
+            saved?.kills ??
+            Math.max(
+              0,
+              Math.floor(safeNumber(user.kills, 0))
+            ),
+          isWinner:
+            saved?.isWinner ??
+            (Boolean(user.is_winner) || user.status === "winner"),
+          killAmount: saved?.killAmount ?? 0,
+          winnerPrize: saved?.winnerPrize ?? 0,
+          totalWinning: saved?.totalWinning ?? 0,
+        };
+      });
 
-        incomingResults.forEach(
-          (result) => {
-            resultMap[
-              String(result.join_id)
-            ] = normalizeResult(result);
-          }
-        );
+      setTournament(data.tournament || {});
+      setUsers(mergedUsers);
 
-        // ------------------------------------------------------
-        // MERGE USER + RESULT
-        // ------------------------------------------------------
-        const mergedUsers =
-          incomingUsers.map((user) => {
-            const saved =
-              resultMap[
-                String(user.id)
-              ];
+      const nextDraft = {};
 
-            return {
-              ...user,
+      mergedUsers.forEach((user) => {
+        nextDraft[user.id] = {
+          kills: Math.max(
+            0,
+            Math.floor(safeNumber(user.kills, 0))
+          ),
+          isWinner: Boolean(user.isWinner),
+        };
+      });
 
-              resultStatus:
-                saved?.status || "",
+      setResults(nextDraft);
+    } catch (error) {
+      console.error("TOURNAMENT DETAIL LOAD ERROR:", error);
 
-              kills:
-                saved?.kills ??
-                Math.max(
-                  0,
-                  Math.floor(
-                    safeNumber(
-                      user.kills,
-                      0
-                    )
-                  )
-                ),
+      setErrorMsg(
+        error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          "Tournament data load nahi ho paaya."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
-              isWinner:
-                saved?.isWinner ??
-                (
-                  Boolean(
-                    user.is_winner
-                  ) ||
-                  user.status ===
-                    "winner"
-                ),
-
-              killAmount:
-                saved?.killAmount ??
-                0,
-
-              winnerPrize:
-                saved?.winnerPrize ??
-                0,
-
-              totalWinning:
-                saved?.totalWinning ??
-                0,
-            };
-          });
-
-        setTournament(
-          tournamentData
-        );
-
-        setUsers(
-          mergedUsers
-        );
-
-        // ------------------------------------------------------
-        // DRAFT RESULTS
-        // ------------------------------------------------------
-        const nextDraft = {};
-
-        mergedUsers.forEach(
-          (user) => {
-            nextDraft[user.id] = {
-              kills: Math.max(
-                0,
-                Math.floor(
-                  safeNumber(
-                    user.kills,
-                    0
-                  )
-                )
-              ),
-
-              isWinner:
-                Boolean(
-                  user.isWinner
-                ),
-            };
-          }
-        );
-
-        setResults(
-          nextDraft
-        );
-      } catch (error) {
-        console.error(
-          "❌ Tournament detail load failed:",
-          error
-        );
-
-        setErrorMsg(
-          error?.response?.data?.error ||
-            error?.response?.data?.message ||
-            "Tournament data load nahi ho paaya."
-        );
-      } finally {
-        setLoading(false);
-      }
-    },
-    [id]
-  );
-
-  // ==========================================================
-  // INITIAL LOAD
-  // ==========================================================
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -374,197 +240,118 @@ const AdminTournamentDetail = () => {
   // ==========================================================
   // TOURNAMENT CONFIG
   // ==========================================================
-  const perKill =
-    getPerKill(tournament);
 
-  const winnerPrize =
-    getWinnerPrize(tournament);
-
-  const maxSlots =
-    getMaxSlots(tournament);
+  const perKill = getPerKill(tournament);
+  const winnerPrize = getWinnerPrize(tournament);
+  const maxSlots = getMaxSlots(tournament);
 
   const entryFee = safeNumber(
-    tournament?.entry_fee ??
-      tournament?.entryFee ??
-      0
+    tournament?.entry_fee ?? tournament?.entryFee ?? 0
   );
 
   const prizePool = safeNumber(
-    tournament?.prize_pool ??
-      tournament?.prizePool ??
-      0
+    tournament?.prize_pool ?? tournament?.prizePool ?? 0
   );
 
   // ==========================================================
-  // ACTIVE PLAYERS
+  // PLAYER FILTERS
   // ==========================================================
+
   const activeUsers = useMemo(
     () =>
       users.filter(
         (user) =>
-          String(user.status)
-            .toLowerCase() !==
-          "rejected"
+          String(user.status || "").toLowerCase() !== "rejected"
       ),
     [users]
   );
 
-  // ==========================================================
-  // APPROVED PLAYERS
-  // ==========================================================
   const approvedUsers = useMemo(
     () =>
-      activeUsers.filter(
-        (user) =>
-          [
-            "approved",
-            "winner",
-            "loser",
-          ].includes(
-            String(
-              user.status || ""
-            ).toLowerCase()
-          )
+      activeUsers.filter((user) =>
+        ["approved", "winner", "loser"].includes(
+          String(user.status || "").toLowerCase()
+        )
       ),
     [activeUsers]
   );
 
   // ==========================================================
-  // CURRENT WINNER
+  // WINNER
   // ==========================================================
+
   const winnerId = useMemo(() => {
-    const winner =
-      activeUsers.find(
-        (user) =>
-          results[user.id]
-            ?.isWinner
-      );
+    const winner = activeUsers.find(
+      (user) => results[user.id]?.isWinner
+    );
 
     return winner?.id || "";
-  }, [
-    activeUsers,
-    results,
-  ]);
+  }, [activeUsers, results]);
 
   const winnerName = useMemo(() => {
-    if (!winnerId) {
-      return "Not selected";
-    }
+    if (!winnerId) return "Not selected";
 
     return (
-      activeUsers.find(
-        (user) =>
-          user.id === winnerId
-      )?.player_name ||
-      "Unknown"
+      activeUsers.find((user) => user.id === winnerId)
+        ?.player_name || "Unknown"
     );
-  }, [
-    activeUsers,
-    winnerId,
-  ]);
+  }, [activeUsers, winnerId]);
 
   // ==========================================================
-  // PREVIEW TOTAL
+  // PAYOUT PREVIEW
   // ==========================================================
-  const previewTotal = useMemo(() => {
-    return activeUsers.reduce(
-      (total, user) => {
-        const draft =
-          results[user.id] || {};
 
+  const previewTotal = useMemo(
+    () =>
+      activeUsers.reduce((total, user) => {
+        const draft = results[user.id] || {};
         const kills = Math.max(
           0,
-          Math.floor(
-            safeNumber(
-              draft.kills,
-              0
-            )
-          )
+          Math.floor(safeNumber(draft.kills, 0))
         );
-
-        const killAmount =
-          kills * perKill;
-
-        const winnerAmount =
-          draft.isWinner
-            ? winnerPrize
-            : 0;
 
         return (
           total +
-          killAmount +
-          winnerAmount
+          kills * perKill +
+          (draft.isWinner ? winnerPrize : 0)
         );
-      },
-      0
-    );
-  }, [
-    activeUsers,
-    results,
-    perKill,
-    winnerPrize,
-  ]);
-
-  // ==========================================================
-  // PAID RESULT CHECK
-  // ==========================================================
-  const paidAlready = useMemo(
-    () =>
-      users.some(
-        (user) => {
-          const status =
-            String(
-              user.resultStatus ||
-                ""
-            ).toLowerCase();
-
-          return (
-            status === "paid" ||
-            status === "settled"
-          );
-        }
-      ),
-    [users]
+      }, 0),
+    [activeUsers, results, perKill, winnerPrize]
   );
 
   // ==========================================================
-  // FINAL LOCK
+  // RESULT LOCK
   // ==========================================================
-  const resultsLocked =
-    paidAlready ||
-    serverResultsLocked;
+
+  const paidAlready = useMemo(
+    () =>
+      users.some((user) => {
+        const status = String(
+          user.resultStatus || ""
+        ).toLowerCase();
+
+        return status === "paid" || status === "settled";
+      }),
+    [users]
+  );
+
+  const resultsLocked = paidAlready || serverResultsLocked;
 
   // ==========================================================
-  // UPDATE DRAFT
+  // DRAFT UPDATE
   // ==========================================================
-  const updatePlayerDraft = (
-    userId,
-    patch
-  ) => {
-    if (resultsLocked) {
-      return;
-    }
+
+  const updatePlayerDraft = (userId, patch) => {
+    if (resultsLocked) return;
 
     setResults((prev) => ({
       ...prev,
-
       [userId]: {
         kills: Math.max(
           0,
-          Math.floor(
-            safeNumber(
-              prev[userId]?.kills,
-              0
-            )
-          )
+          Math.floor(safeNumber(prev[userId]?.kills, 0))
         ),
-
-        isWinner:
-          Boolean(
-            prev[userId]
-              ?.isWinner
-          ),
-
+        isWinner: Boolean(prev[userId]?.isWinner),
         ...patch,
       },
     }));
@@ -573,26 +360,19 @@ const AdminTournamentDetail = () => {
   // ==========================================================
   // SELECT WINNER
   // ==========================================================
-  const selectWinner = (
-    userId
-  ) => {
-    if (resultsLocked) {
-      return;
-    }
+
+  const selectWinner = (userId) => {
+    if (resultsLocked) return;
 
     setResults((prev) => {
-      const next = {
-        ...prev,
-      };
+      const next = { ...prev };
 
-      Object.keys(next).forEach(
-        (key) => {
-          next[key] = {
-            ...next[key],
-            isWinner: false,
-          };
-        }
-      );
+      Object.keys(next).forEach((key) => {
+        next[key] = {
+          ...next[key],
+          isWinner: false,
+        };
+      });
 
       if (next[userId]) {
         next[userId] = {
@@ -608,48 +388,36 @@ const AdminTournamentDetail = () => {
   // ==========================================================
   // APPROVE / REJECT
   // ==========================================================
-  const updateJoinStatus = async (
-    userId,
-    status
-  ) => {
-    const actionKey =
-      `${status}:${userId}`;
+
+  const updateJoinStatus = async (userId, status) => {
+    const actionKey = `${status}:${userId}`;
 
     setActionId(actionKey);
     setMessage("");
     setErrorMsg("");
 
     try {
-      let endpoint = "";
+      const endpoint =
+        status === "approved"
+          ? "approve"
+          : status === "rejected"
+          ? "reject"
+          : "";
 
-      if (status === "approved") {
-        endpoint = "approve";
-      }
+      if (!endpoint) return;
 
-      if (status === "rejected") {
-        endpoint = "reject";
-      }
+      const response = await axios.put(
+        `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
+          id
+        )}/${endpoint}`,
+        { userId },
+        {
+          ...getAdminAuthConfig(),
+          timeout: 10000,
+        }
+      );
 
-      if (!endpoint) {
-        return;
-      }
-
-     const response =
-  await axios.put(
-    `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
-      id
-    )}/${endpoint}`,
-    {
-      userId,
-    },
-    {
-      ...getAdminAuthConfig(),
-      timeout: 10000,
-    }
-  );
-
-      const updatedJoin =
-        response.data?.join;
+      const updatedJoin = response.data?.join;
 
       setUsers((prev) =>
         prev.map((user) =>
@@ -665,14 +433,11 @@ const AdminTournamentDetail = () => {
 
       setMessage(
         status === "approved"
-          ? "✅ Player approved."
-          : "🚫 Player rejected."
+          ? "Player approved successfully."
+          : "Player rejected successfully."
       );
     } catch (error) {
-      console.error(
-        `❌ ${status} failed:`,
-        error
-      );
+      console.error(`${status} failed:`, error);
 
       setErrorMsg(
         error?.response?.data?.error ||
@@ -687,71 +452,44 @@ const AdminTournamentDetail = () => {
   // ==========================================================
   // DELETE PLAYER
   // ==========================================================
-  const handleDelete = async (
-    userId
-  ) => {
+
+  const handleDelete = async (userId) => {
     if (resultsLocked) {
       setErrorMsg(
-        "❌ Paid result wale player ko delete nahi kar sakte."
+        "Paid result wale player ko delete nahi kar sakte."
       );
       return;
     }
 
-    const confirmed =
-      window.confirm(
-        "Ye tournament join record delete karna hai?"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setActionId(
-      `delete:${userId}`
-    );
-
+    setActionId(`delete:${userId}`);
     setMessage("");
     setErrorMsg("");
 
     try {
       await axios.delete(
-  `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
-    id
-  )}`,
-  {
-    ...getAdminAuthConfig(),
-    data: {
-      userId,
-    },
-    timeout: 10000,
-  }
-);
+        `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
+          id
+        )}`,
+        {
+          ...getAdminAuthConfig(),
+          data: { userId },
+          timeout: 10000,
+        }
+      );
 
       setUsers((prev) =>
-        prev.filter(
-          (user) =>
-            user.id !== userId
-        )
+        prev.filter((user) => user.id !== userId)
       );
 
       setResults((prev) => {
-        const next = {
-          ...prev,
-        };
-
+        const next = { ...prev };
         delete next[userId];
-
         return next;
       });
 
-      setMessage(
-        "🗑️ Player join deleted."
-      );
+      setMessage("Player join record deleted.");
     } catch (error) {
-      console.error(
-        "❌ Delete player failed:",
-        error
-      );
+      console.error("DELETE PLAYER ERROR:", error);
 
       setErrorMsg(
         error?.response?.data?.error ||
@@ -766,326 +504,159 @@ const AdminTournamentDetail = () => {
   // ==========================================================
   // SAVE / CALCULATE RESULTS
   // ==========================================================
-  const saveResults = async () => {
-    // --------------------------------------------------------
-    // DUPLICATE CLICK LOCK
-    // --------------------------------------------------------
-    if (saveResultsLock.current) {
-      return;
-    }
 
-    // --------------------------------------------------------
-    // BASIC VALIDATION
-    // --------------------------------------------------------
+  const saveResults = async () => {
+    if (saveResultsLock.current) return;
+
     if (!resultSystemAvailable) {
       setErrorMsg(
-        "❌ Result system database mein available nahi hai."
+        "Result system database mein available nahi hai."
       );
       return;
     }
 
     if (!activeUsers.length) {
-      setErrorMsg(
-        "❌ Koi active player nahi mila."
-      );
+      setErrorMsg("Koi active player nahi mila.");
       return;
     }
 
-    // --------------------------------------------------------
-    // CURRENT LOCK
-    // --------------------------------------------------------
     if (resultsLocked) {
       setMessage(
-        "✅ This tournament is already settled. Paid results cannot be edited."
+        "This tournament is already settled. Paid results cannot be edited."
       );
       setErrorMsg("");
       return;
     }
 
-    // --------------------------------------------------------
-    // LOCK BEFORE REQUEST
-    // --------------------------------------------------------
     saveResultsLock.current = true;
-
     setSavingResults(true);
     setMessage("");
     setErrorMsg("");
 
     try {
-      // ======================================================
-      // FRESH SERVER CHECK
-      //
-      // Ye check stale frontend state ko avoid karega.
-      // ======================================================
-      const latestResponse =
-        await axios.get(
-          `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
-            id
-          )}`,
-          {
-  ...getAdminAuthConfig(),
-  timeout: 10000,
-}
-        );
+      // Fresh server-side state check before saving.
+      const latestResponse = await axios.get(
+        `${ADMIN_API_BASE}/admin/tournament-joins/${encodeURIComponent(
+          id
+        )}`,
+        {
+          ...getAdminAuthConfig(),
+          timeout: 10000,
+        }
+      );
 
-      const latestData =
-        latestResponse.data || {};
+      const latestData = latestResponse.data || {};
+      const latestResults = Array.isArray(latestData.results)
+        ? latestData.results
+        : [];
 
-      const latestResults =
-        Array.isArray(
-          latestData.results
-        )
-          ? latestData.results
-          : [];
+      const latestTournament = latestData.tournament || {};
 
-      const latestTournament =
-        latestData.tournament || {};
-
-      // ------------------------------------------------------
-      // CHECK RESULT STATUS
-      // ------------------------------------------------------
-      const latestPaid =
-        latestResults.some(
-          (result) => {
-            const status =
-              String(
-                result?.status ||
-                  result?.result_status ||
-                  ""
-              ).toLowerCase();
-
-            return (
-              status === "paid" ||
-              status === "settled"
-            );
-          }
-        );
-
-      // ------------------------------------------------------
-      // CHECK TOURNAMENT SETTLEMENT FLAGS
-      // ------------------------------------------------------
-      const latestTournamentStatus =
-        String(
-          latestTournament?.status ||
-            ""
-        ).toLowerCase();
-
-      const latestSettled =
-        latestTournament?.settled === true ||
-        latestTournament?.is_settled === true ||
-        latestTournament?.results_settled === true ||
-        latestTournament?.resultsSettled === true ||
-        latestTournament?.settlement_completed === true ||
-        latestTournamentStatus ===
-          "settled" ||
-        latestTournamentStatus ===
-          "paid";
-
-      // ------------------------------------------------------
-      // STOP SAVE
-      // ------------------------------------------------------
       if (
-        latestPaid ||
-        latestSettled
+        hasPaidResults(latestResults) ||
+        isSettledTournament(latestTournament)
       ) {
-        setServerResultsLocked(
-          true
-        );
-
+        setServerResultsLocked(true);
         setMessage(
-          "✅ This tournament is already settled. Paid results cannot be edited."
+          "This tournament is already settled. Paid results cannot be edited."
         );
-
         setErrorMsg("");
-
-        // Latest users/results load
         await loadData();
-
         return;
       }
 
-      // ======================================================
-      // WINNER VALIDATION
-      // ======================================================
-      const selectedWinners =
-        activeUsers.filter(
-          (user) =>
-            results[user.id]
-              ?.isWinner
-        );
+      const selectedWinners = activeUsers.filter(
+        (user) => results[user.id]?.isWinner
+      );
 
       if (
         winnerPrize > 0 &&
         selectedWinners.length !== 1
       ) {
-        setErrorMsg(
-          "❌ Exactly 1 winner select karo."
-        );
+        setErrorMsg("Exactly 1 winner select karo.");
         return;
       }
 
-      // ======================================================
-      // BUILD PAYLOAD
-      // ======================================================
-      const payload =
-        activeUsers.map(
-          (user) => ({
-            joinId:
-              user.id,
+      const payload = activeUsers.map((user) => ({
+        joinId: user.id,
+        kills: Math.max(
+          0,
+          Math.floor(
+            safeNumber(results[user.id]?.kills, 0)
+          )
+        ),
+        isWinner: Boolean(results[user.id]?.isWinner),
+      }));
 
-            kills: Math.max(
-              0,
-              Math.floor(
-                safeNumber(
-                  results[
-                    user.id
-                  ]?.kills,
-                  0
-                )
-              )
-            ),
+      const response = await axios.post(
+        `${ADMIN_API_BASE}/admin/tournament-results/${encodeURIComponent(
+          id
+        )}/save`,
+        { results: payload },
+        {
+          ...getAdminAuthConfig(),
+          timeout: 15000,
+        }
+      );
 
-            isWinner:
-              Boolean(
-                results[
-                  user.id
-                ]?.isWinner
-              ),
-          })
-        );
-
-      // ======================================================
-      // SAVE TO SERVER
-      // ======================================================
-const response =
-  await axios.post(
-    `${ADMIN_API_BASE}/admin/tournament-results/${encodeURIComponent(
-      id
-    )}/save`,
-    {
-      results: payload,
-    },
-    {
-      ...getAdminAuthConfig(),
-      timeout: 15000,
-    }
-  );
-
-      // ======================================================
-      // UPDATE LOCAL USERS
-      // ======================================================
-      const savedResults =
-        Array.isArray(
-          response.data?.results
-        )
-          ? response.data.results
-          : [];
+      const savedResults = Array.isArray(response.data?.results)
+        ? response.data.results
+        : [];
 
       setUsers((prev) =>
         prev.map((user) => {
-          const saved =
-            savedResults.find(
-              (item) =>
-                String(
-                  item.join_id
-                ) ===
-                String(
-                  user.id
-                )
-            );
+          const saved = savedResults.find(
+            (item) =>
+              String(item.join_id) === String(user.id)
+          );
 
-          if (!saved) {
-            return user;
-          }
+          if (!saved) return user;
 
           return {
             ...user,
-
-            kills:
-              safeNumber(
-                saved.kills
-              ),
-
-            isWinner:
-              Boolean(
-                saved.is_winner
-              ),
-
-            killAmount:
-              safeNumber(
-                saved.kill_amount
-              ),
-
-            winnerPrize:
-              safeNumber(
-                saved.winner_prize
-              ),
-
-            totalWinning:
-              safeNumber(
-                saved.total_winning
-              ),
-
-            resultStatus:
-              saved.status ||
-              "pending",
+            kills: safeNumber(saved.kills),
+            isWinner: Boolean(saved.is_winner),
+            killAmount: safeNumber(saved.kill_amount),
+            winnerPrize: safeNumber(saved.winner_prize),
+            totalWinning: safeNumber(saved.total_winning),
+            resultStatus: saved.status || "pending",
           };
         })
       );
 
       setMessage(
-        `✅ Results saved successfully. Total winning: ${currency(
-          response.data
-            ?.totalWinning ||
-            0
+        `Results saved successfully. Total winning: ${currency(
+          response.data?.totalWinning || 0
         )}`
       );
     } catch (error) {
       const serverError =
-        error?.response?.data
-          ?.error ||
-        error?.response?.data
-          ?.message ||
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
         "";
 
-      // ------------------------------------------------------
-      // BACKEND SAFETY
-      // ------------------------------------------------------
       if (
-        error?.response?.status ===
-          400 &&
+        error?.response?.status === 400 &&
         /already settled|paid results cannot be edited/i.test(
           serverError
         )
       ) {
-        setServerResultsLocked(
-          true
-        );
-
+        setServerResultsLocked(true);
         await loadData();
-
         setMessage(
-          "✅ This tournament is already settled. Paid results cannot be edited."
+          "This tournament is already settled. Paid results cannot be edited."
         );
-
         setErrorMsg("");
-
         return;
       }
 
-      console.error(
-        "❌ Save results failed:",
-        error
-      );
+      console.error("SAVE RESULTS ERROR:", error);
 
       setErrorMsg(
-        serverError ||
-          "Results save nahi ho paaye."
+        serverError || "Results save nahi ho paaye."
       );
     } finally {
-      saveResultsLock.current =
-        false;
-
+      saveResultsLock.current = false;
       setSavingResults(false);
     }
   };
@@ -1093,85 +664,89 @@ const response =
   // ==========================================================
   // CREDIT WINNING
   // ==========================================================
-  const settleWinning =
-    async () => {
-      if (!resultSystemAvailable) {
-        setErrorMsg(
-          "❌ Result system database mein available nahi hai."
-        );
-        return;
-      }
 
-      if (resultsLocked) {
-        setErrorMsg(
-          "❌ Is tournament ki winning already paid hai."
-        );
-        return;
-      }
+  const settleWinning = async () => {
+    if (settlementLock.current) return;
 
-      // ------------------------------------------------------
-      // RESULT MUST BE SAVED FIRST
-      // ------------------------------------------------------
-      const hasPendingResults =
-        users.some(
-          (user) =>
-            String(
-              user.resultStatus ||
-                ""
-            ).toLowerCase() ===
-            "pending"
-        );
+    if (!resultSystemAvailable) {
+      setErrorMsg(
+        "Result system database mein available nahi hai."
+      );
+      return;
+    }
 
-      if (!hasPendingResults) {
-        setErrorMsg(
-          "❌ Pehle Save / Calculate Results karo."
-        );
-        return;
-      }
+    if (resultsLocked) {
+      setErrorMsg(
+        "Is tournament ki winning already paid hai."
+      );
+      return;
+    }
 
-      const confirmed =
-        window.confirm(
-          "Winning sab selected players ke wallet mein credit karni hai?"
-        );
+    const hasPendingResults = users.some(
+      (user) =>
+        String(user.resultStatus || "").toLowerCase() ===
+        "pending"
+    );
 
-      if (!confirmed) {
-        return;
-      }
+    if (!hasPendingResults) {
+      setErrorMsg("Pehle Save / Calculate Results karo.");
+      return;
+    }
 
+    setConfirmAction({
+      type: "settle",
+      title: "Credit Tournament Winning?",
+      description:
+        "Selected players ki winning unke wallet mein credit hogi. Is action ko sirf ek baar perform karein.",
+    });
+  };
+
+  // ==========================================================
+  // CONFIRM ACTION
+  // ==========================================================
+
+  const confirmPendingAction = async () => {
+    if (!confirmAction) return;
+
+    const action = confirmAction;
+    setConfirmAction(null);
+
+    if (action.type === "delete") {
+      await handleDelete(action.userId);
+      return;
+    }
+
+    if (action.type === "settle") {
+      if (settlementLock.current) return;
+
+      settlementLock.current = true;
       setSettling(true);
       setMessage("");
       setErrorMsg("");
 
       try {
-        const response =
-  await axios.post(
-    `${ADMIN_API_BASE}/admin/tournament-results/${encodeURIComponent(
-      id
-    )}/settle`,
-    {},
-    {
-      ...getAdminAuthConfig(),
-      timeout: 20000,
-    }
-  );
+        const response = await axios.post(
+          `${ADMIN_API_BASE}/admin/tournament-results/${encodeURIComponent(
+            id
+          )}/settle`,
+          {},
+          {
+            ...getAdminAuthConfig(),
+            timeout: 20000,
+          }
+        );
 
         setMessage(
-          `💰 Winning settled successfully. ${
-            response.data
-              ?.paidCount ?? 0
+          `Winning settled successfully. ${
+            response.data?.paidCount ?? 0
           } player(s) paid, total ${currency(
-            response.data
-              ?.totalPaid ||
-              0
+            response.data?.totalPaid || 0
           )}.`
         );
 
         await loadData();
       } catch (error) {
-        console.error(
-          "❌ Settlement failed:",
-          error
-        );
+        console.error("SETTLEMENT ERROR:", error);
 
         setErrorMsg(
           error?.response?.data?.error ||
@@ -1179,29 +754,23 @@ const response =
             "Winning credit nahi ho paayi."
         );
       } finally {
+        settlementLock.current = false;
         setSettling(false);
       }
-    };
+    }
+  };
 
   // ==========================================================
   // LOADING
   // ==========================================================
+
   if (loading) {
     return (
       <div className="admin-tournament-page loading-state">
         <div className="loading-card">
-
           <div className="loading-spinner" />
-
-          <h2>
-            Loading tournament...
-          </h2>
-
-          <p>
-            Players aur tournament
-            data load ho raha hai.
-          </p>
-
+          <h2>Loading Tournament</h2>
+          <p>Players aur tournament data load ho raha hai...</p>
         </div>
       </div>
     );
@@ -1210,35 +779,24 @@ const response =
   // ==========================================================
   // NOT FOUND
   // ==========================================================
+
   if (!tournament) {
     return (
       <div className="admin-tournament-page">
-
         <div className="empty-card">
-
-          <h2>
-            Tournament not found
-          </h2>
-
+          <div className="empty-card-icon">!</div>
+          <h2>Tournament Not Found</h2>
           <p>
-            {errorMsg ||
-              "Tournament record available nahi hai."}
+            {errorMsg || "Tournament record available nahi hai."}
           </p>
-
           <button
             type="button"
             className="primary-btn"
-            onClick={() =>
-              navigate(
-                "/dashboard"
-              )
-            }
+            onClick={() => navigate("/dashboard")}
           >
             ← Back to Dashboard
           </button>
-
         </div>
-
       </div>
     );
   }
@@ -1246,239 +804,177 @@ const response =
   // ==========================================================
   // RENDER
   // ==========================================================
+
   return (
     <div className="admin-tournament-page">
 
-      {/* ======================================================
-          PAGE HEADER
-      ====================================================== */}
-      <div className="page-head">
+      {/* PAGE HEADER */}
 
+      <header className="page-head">
         <div className="page-head-left">
-
           <button
             type="button"
             className="back-btn"
-            onClick={() =>
-              navigate(
-                "/dashboard"
-              )
-            }
+            onClick={() => navigate("/dashboard")}
           >
             ← Dashboard
           </button>
 
           <span className="eyebrow">
-            TOURNAMENT CONTROL
+            <span className="eyebrow-dot" />
+            TOURNAMENT CONTROL CENTER
           </span>
 
-          <h1>
-            {tournament.name ||
-              "BGMI Tournament"}
-          </h1>
+          <h1>{tournament.name || "BGMI Tournament"}</h1>
 
           <p>
             Tournament ID:{" "}
-            <strong>
-              {tournament.id ||
-                id}
-            </strong>
+            <strong>{tournament.id || id}</strong>
           </p>
-
         </div>
 
-      </div>
+        <button
+          type="button"
+          className="refresh-tournament-btn"
+          onClick={loadData}
+          disabled={loading || savingResults || settling}
+        >
+          ↻ Refresh Data
+        </button>
+      </header>
 
-      {/* ======================================================
-          ALERTS
-      ====================================================== */}
+      {/* ALERTS */}
+
       {(message || errorMsg) && (
         <div
           className={`admin-alert ${
-            errorMsg
-              ? "error"
-              : "success"
+            errorMsg ? "error" : "success"
           }`}
+          role="status"
         >
-          {errorMsg || message}
+          <span className="alert-icon">
+            {errorMsg ? "!" : "✓"}
+          </span>
+          <span>{errorMsg || message}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setMessage("");
+              setErrorMsg("");
+            }}
+            aria-label="Dismiss message"
+          >
+            ×
+          </button>
         </div>
       )}
 
-      {/* ======================================================
-          SETTLED NOTICE
-      ====================================================== */}
+      {/* SETTLED NOTICE */}
+
       {resultsLocked && (
-        <div className="admin-alert">
-          ✅ This tournament is already settled. Paid results
-          cannot be edited.
+        <div className="locked-notice">
+          <span>🔒</span>
+          <div>
+            <strong>Results Locked</strong>
+            <p>
+              This tournament is already settled. Paid results cannot
+              be edited or credited again.
+            </p>
+          </div>
         </div>
       )}
 
-      {/* ======================================================
-          TOURNAMENT INFO
-      ====================================================== */}
+      {/* TOURNAMENT OVERVIEW */}
+
       <section className="hero-grid">
 
         <div className="hero-card primary">
-
           <div className="hero-topline">
-
-            <span>
-              {tournament.status ||
-                "Scheduled"}
+            <span className="tournament-status-label">
+              {tournament.status || "Scheduled"}
             </span>
-
-            <span>
+            <span className="visibility-label">
               {tournament.is_visible === false
                 ? "Hidden"
                 : "Visible"}
             </span>
-
           </div>
 
           <div className="hero-title-row">
-
-            <div>
-
-              <h2>
-                {tournament.name ||
-                  "Tournament"}
-              </h2>
-
+            <div className="hero-tournament-info">
+              <h2>{tournament.name || "Tournament"}</h2>
               <p>
-                {tournament.mode ||
-                  "Classic"}
+                {tournament.mode || "Classic"}
                 {" · "}
-                {tournament.map ||
-                  "Erangel"}
+                {tournament.map || "Erangel"}
               </p>
-
               <small>
                 {tournament.teamType ||
                   tournament.team_type ||
-                  ""}
+                  "BGMI"}
               </small>
-
             </div>
 
             <div className="big-prize">
-              {currency(prizePool)}
+              <span>PRIZE POOL</span>
+              <strong>{currency(prizePool)}</strong>
             </div>
-
           </div>
-
         </div>
 
         <div className="stat-card">
-
-          <span>
-            ENTRY
-          </span>
-
-          <strong>
-            {currency(entryFee)}
-          </strong>
-
-          <small>
-            Per player
-          </small>
-
+          <span className="stat-card-icon">₹</span>
+          <span className="stat-card-label">ENTRY FEE</span>
+          <strong>{currency(entryFee)}</strong>
+          <small>Per player</small>
         </div>
 
         <div className="stat-card">
-
-          <span>
-            PER KILL
-          </span>
-
-          <strong>
-            {currency(perKill)}
-          </strong>
-
-          <small>
-            Kill earning
-          </small>
-
+          <span className="stat-card-icon">⚔</span>
+          <span className="stat-card-label">PER KILL</span>
+          <strong>{currency(perKill)}</strong>
+          <small>Kill earning</small>
         </div>
 
         <div className="stat-card">
-
-          <span>
-            WINNER PRIZE
-          </span>
-
-          <strong>
-            {currency(winnerPrize)}
-          </strong>
-
-          <small>
-            Winner bonus
-          </small>
-
+          <span className="stat-card-icon">🏆</span>
+          <span className="stat-card-label">WINNER PRIZE</span>
+          <strong>{currency(winnerPrize)}</strong>
+          <small>Winner bonus</small>
         </div>
 
         <div className="stat-card">
-
-          <span>
-            SLOTS
-          </span>
-
+          <span className="stat-card-icon">▣</span>
+          <span className="stat-card-label">SLOTS FILLED</span>
           <strong>
-            {users.length}/
-            {maxSlots}
+            {users.length}/{maxSlots}
           </strong>
-
           <small>
-            {maxSlots
-              ? Math.min(
-                  100,
-                  Math.round(
-                    (users.length /
-                      maxSlots) *
-                      100
-                  )
-                )
-              : 0}
+            {Math.min(
+              100,
+              Math.round((users.length / maxSlots) * 100)
+            )}
             % filled
           </small>
-
         </div>
 
       </section>
 
-      {/* ======================================================
-          RESULT TOOLBAR
-      ====================================================== */}
+      {/* RESULT TOOLBAR */}
+
       <section className="results-toolbar">
-
-        <div>
-
-          <h3>
-            Match Results
-          </h3>
-
+        <div className="results-toolbar-heading">
+          <span className="section-kicker">MATCH MANAGEMENT</span>
+          <h3>Match Results</h3>
           <p>
-            Har active player ke
-            kills enter karo aur
-            ek winner select karo.
+            Players ke kills enter karo aur winner select karo.
           </p>
-
         </div>
 
         <div className="toolbar-right">
-
           <div className="total-preview">
-
-            <span>
-              Preview payout
-            </span>
-
-            <strong>
-              {currency(
-                previewTotal
-              )}
-            </strong>
-
+            <span>PREVIEW PAYOUT</span>
+            <strong>{currency(previewTotal)}</strong>
           </div>
 
           <button
@@ -1495,8 +991,8 @@ const response =
             {savingResults
               ? "Saving..."
               : resultsLocked
-              ? "✅ Results Locked"
-              : "💾 Save / Calculate"}
+              ? "🔒 Results Locked"
+              : "▣ Save / Calculate"}
           </button>
 
           <button
@@ -1510,477 +1006,415 @@ const response =
               !resultSystemAvailable
             }
           >
-            {resultsLocked
-              ? "✅ Winning Paid"
-              : settling
+            {settling
               ? "Crediting..."
-              : "💰 Credit Winning"}
+              : resultsLocked
+              ? "✓ Winning Paid"
+              : "₹ Credit Winning"}
           </button>
-
         </div>
-
       </section>
 
-      {/* ======================================================
-          RESULT SYSTEM WARNING
-      ====================================================== */}
+      {/* RESULT SYSTEM WARNING */}
+
       {!resultSystemAvailable && (
         <div className="admin-alert error">
-          ⚠️ Result system available nahi
-          hai. `tournament_results`
-          table setup karo.
+          <span className="alert-icon">!</span>
+          <span>
+            Result system available nahi hai. Database result system
+            setup check karo.
+          </span>
         </div>
       )}
 
-      {/* ======================================================
-          PLAYER TABLE
-      ====================================================== */}
+      {/* PLAYER TABLE */}
+
       <section className="players-card">
-
         <div className="table-headline">
-
           <div>
-
-            <h3>
-              Players
-            </h3>
-
+            <span className="section-kicker">PARTICIPANTS</span>
+            <h3>Players</h3>
             <p>
-              {activeUsers.length}
-              {" "}active players
+              {activeUsers.length} active players
               {" · "}
-              {approvedUsers.length}
-              {" "}approved
+              {approvedUsers.length} approved
             </p>
-
           </div>
 
           <div className="winner-note">
-
-            Winner:{" "}
-
-            <strong>
-              {winnerName}
-            </strong>
-
+            <span>🏆 CURRENT WINNER</span>
+            <strong>{winnerName}</strong>
           </div>
-
         </div>
 
         <div className="table-scroll">
-
           <table className="players-table">
-
             <thead>
-
               <tr>
                 <th>#</th>
-                <th>Player</th>
+                <th>PLAYER</th>
                 <th>BGMI ID</th>
-                <th>Profile</th>
-                <th>Status</th>
-                <th>Kills</th>
-                <th>Kill ₹</th>
-                <th>Winner</th>
-                <th>Total Winning</th>
-                <th>Actions</th>
+                <th>PROFILE ID</th>
+                <th>STATUS</th>
+                <th>KILLS</th>
+                <th>KILL ₹</th>
+                <th>WINNER</th>
+                <th>TOTAL WINNING</th>
+                <th>ACTIONS</th>
               </tr>
-
             </thead>
 
             <tbody>
+              {users.map((user, index) => {
+                const draft = results[user.id] || {
+                  kills: 0,
+                  isWinner: false,
+                };
 
-              {users.map(
-                (user, index) => {
-                  const draft =
-                    results[
-                      user.id
-                    ] || {
-                      kills: 0,
-                      isWinner: false,
-                    };
+                const kills = Math.max(
+                  0,
+                  Math.floor(safeNumber(draft.kills, 0))
+                );
 
-                  const kills =
-                    Math.max(
-                      0,
-                      Math.floor(
-                        safeNumber(
-                          draft.kills,
-                          0
-                        )
-                      )
-                    );
+                const killAmount = kills * perKill;
+                const winnerAmount = draft.isWinner
+                  ? winnerPrize
+                  : 0;
+                const totalWinning = killAmount + winnerAmount;
 
-                  const killAmount =
-                    kills * perKill;
+                const busy =
+                  actionId === `approved:${user.id}` ||
+                  actionId === `rejected:${user.id}` ||
+                  actionId === `delete:${user.id}`;
 
-                  const winnerAmount =
-                    draft.isWinner
-                      ? winnerPrize
-                      : 0;
+                const status = String(
+                  user.status || "registered"
+                ).toLowerCase();
 
-                  const totalWinning =
-                    killAmount +
-                    winnerAmount;
+                const isRejected = status === "rejected";
 
-                  const busy =
-                    actionId ===
-                      `approved:${user.id}` ||
-                    actionId ===
-                      `rejected:${user.id}` ||
-                    actionId ===
-                      `delete:${user.id}`;
+                return (
+                  <tr
+                    key={user.id}
+                    className={draft.isWinner ? "winner-row" : ""}
+                  >
+                    <td className="index-cell">
+                      {String(index + 1).padStart(2, "0")}
+                    </td>
 
-                  const status =
-                    String(
-                      user.status ||
-                        "Registered"
-                    ).toLowerCase();
-
-                  return (
-                    <tr
-                      key={user.id}
-                      className={
-                        draft.isWinner
-                          ? "winner-row"
-                          : ""
-                      }
-                    >
-
-                      <td className="index-cell">
-                        {index + 1}
-                      </td>
-
-                      <td>
-
-                        <div className="player-main">
-
-                          <strong>
-                            {user.player_name ||
-                              "Unknown"}
-                          </strong>
-
-                          <span>
-                            {user.profile_name ||
-                              "N/A"}
-                          </span>
-
+                    <td>
+                      <div className="player-main">
+                        <div className="player-avatar">
+                          {(user.player_name || "P")
+                            .charAt(0)
+                            .toUpperCase()}
                         </div>
-
-                      </td>
-
-                      <td className="mono">
-                        {user.bgmi_id ||
-                          "N/A"}
-                      </td>
-
-                      <td className="mono">
-                        {user.profile_id ||
-                          "N/A"}
-                      </td>
-
-                      <td>
-
-                        <span
-                          className={`status-pill status-${status.replace(
-                            /\s+/g,
-                            "-"
-                          )}`}
-                        >
-                          {user.status ||
-                            "Registered"}
-                        </span>
-
-                        {user.resultStatus ===
-                          "paid" && (
-                          <span className="paid-mini">
-                            PAID
+                        <div>
+                          <strong>
+                            {user.player_name || "Unknown"}
+                          </strong>
+                          <span>
+                            {user.profile_name || "No profile name"}
                           </span>
-                        )}
+                        </div>
+                      </div>
+                    </td>
 
-                      </td>
+                    <td className="mono">
+                      {user.bgmi_id || "N/A"}
+                    </td>
 
-                      <td>
+                    <td className="mono">
+                      {user.profile_id || "N/A"}
+                    </td>
 
-                        <input
-                          className="kills-input"
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={
-                            draft.kills
-                          }
-                          onChange={(
-                            event
-                          ) =>
-                            updatePlayerDraft(
-                              user.id,
-                              {
-                                kills:
-                                  Math.max(
-                                    0,
-                                    Math.floor(
-                                      safeNumber(
-                                        event
-                                          .target
-                                          .value,
-                                        0
-                                      )
-                                    )
-                                  ),
-                              }
-                            )
+                    <td>
+                      <span
+                        className={`status-pill status-${status.replace(
+                          /\s+/g,
+                          "-"
+                        )}`}
+                      >
+                        <span className="status-pill-dot" />
+                        {user.status || "Registered"}
+                      </span>
+
+                      {user.resultStatus === "paid" && (
+                        <span className="paid-mini">PAID</span>
+                      )}
+                    </td>
+
+                    <td>
+                      <input
+                        className="kills-input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={draft.kills}
+                        onChange={(event) =>
+                          updatePlayerDraft(user.id, {
+                            kills: Math.max(
+                              0,
+                              Math.floor(
+                                safeNumber(event.target.value, 0)
+                              )
+                            ),
+                          })
+                        }
+                        disabled={
+                          resultsLocked ||
+                          isRejected ||
+                          savingResults ||
+                          settling
+                        }
+                        aria-label={`Kills for ${user.player_name || "player"}`}
+                      />
+                    </td>
+
+                    <td className="money-cell">
+                      {currency(killAmount)}
+                    </td>
+
+                    <td>
+                      <button
+                        type="button"
+                        className={`winner-toggle ${
+                          draft.isWinner ? "selected" : ""
+                        }`}
+                        onClick={() => selectWinner(user.id)}
+                        disabled={
+                          resultsLocked ||
+                          isRejected ||
+                          savingResults ||
+                          settling
+                        }
+                      >
+                        {draft.isWinner ? "🏆 Winner" : "Select"}
+                      </button>
+                    </td>
+
+                    <td>
+                      <strong className="winning-amount">
+                        {currency(totalWinning)}
+                      </strong>
+                    </td>
+
+                    <td>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="approve-small"
+                          onClick={() =>
+                            updateJoinStatus(user.id, "approved")
                           }
                           disabled={
+                            busy ||
+                            settling ||
                             resultsLocked ||
-                            status ===
-                              "rejected" ||
-                            savingResults ||
-                            settling
+                            ["approved", "winner", "loser", "rejected"].includes(
+                              status
+                            )
                           }
-                        />
-
-                      </td>
-
-                      <td>
-                        {currency(
-                          killAmount
-                        )}
-                      </td>
-
-                      <td>
+                          title="Approve player"
+                        >
+                          ✓
+                        </button>
 
                         <button
                           type="button"
-                          className={`winner-toggle ${
-                            draft.isWinner
-                              ? "selected"
-                              : ""
-                          }`}
+                          className="reject-small"
                           onClick={() =>
-                            selectWinner(
-                              user.id
-                            )
+                            updateJoinStatus(user.id, "rejected")
                           }
                           disabled={
+                            busy ||
+                            settling ||
                             resultsLocked ||
-                            status ===
-                              "rejected" ||
-                            savingResults ||
-                            settling
+                            isRejected
                           }
+                          title="Reject player"
                         >
-                          {draft.isWinner
-                            ? "🏆 Winner"
-                            : "Select"}
+                          ✕
                         </button>
 
-                      </td>
-
-                      <td>
-
-                        <strong className="winning-amount">
-                          {currency(
-                            totalWinning
-                          )}
-                        </strong>
-
-                      </td>
-
-                      <td>
-
-                        <div className="row-actions">
-
-                          <button
-                            type="button"
-                            className="approve-small"
-                            onClick={() =>
-                              updateJoinStatus(
-                                user.id,
-                                "approved"
-                              )
-                            }
-                            disabled={
-                              busy ||
-                              settling ||
-                              resultsLocked ||
-                              user.status ===
-                                "approved" ||
-                              user.status ===
-                                "winner" ||
-                              user.status ===
-                                "loser" ||
-                              user.status ===
-                                "rejected"
-                            }
-                            title="Approve"
-                          >
-                            ✓
-                          </button>
-
-                          <button
-                            type="button"
-                            className="reject-small"
-                            onClick={() =>
-                              updateJoinStatus(
-                                user.id,
-                                "rejected"
-                              )
-                            }
-                            disabled={
-                              busy ||
-                              settling ||
-                              resultsLocked ||
-                              user.status ===
-                                "rejected"
-                            }
-                            title="Reject"
-                          >
-                            ✕
-                          </button>
-
-                          <button
-                            type="button"
-                            className="delete-small"
-                            onClick={() =>
-                              handleDelete(
-                                user.id
-                              )
-                            }
-                            disabled={
-                              busy ||
-                              settling ||
-                              resultsLocked
-                            }
-                            title="Delete"
-                          >
-                            🗑
-                          </button>
-
-                        </div>
-
-                      </td>
-
-                    </tr>
-                  );
-                }
-              )}
+                        <button
+                          type="button"
+                          className="delete-small"
+                          onClick={() =>
+                            setConfirmAction({
+                              type: "delete",
+                              userId: user.id,
+                              title: "Delete Player Join?",
+                              description:
+                                `Remove ${user.player_name || "this player"} from this tournament? This action cannot be undone.`,
+                            })
+                          }
+                          disabled={
+                            busy ||
+                            settling ||
+                            resultsLocked
+                          }
+                          title="Delete player"
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {!users.length && (
                 <tr>
-
-                  <td
-                    colSpan="10"
-                    className="no-players"
-                  >
-                    📭 No players joined
-                    this tournament yet.
+                  <td colSpan="10" className="no-players">
+                    <span>▣</span>
+                    <strong>No Players Found</strong>
+                    <small>
+                      Abhi tak kisi player ne tournament join nahi kiya.
+                    </small>
                   </td>
-
                 </tr>
               )}
-
             </tbody>
-
           </table>
-
         </div>
 
+        <div className="players-table-footer">
+          <span>
+            Total records: <strong>{users.length}</strong>
+          </span>
+          <span>
+            Active: <strong>{activeUsers.length}</strong>
+          </span>
+          <span>
+            Approved: <strong>{approvedUsers.length}</strong>
+          </span>
+        </div>
       </section>
 
-      {/* ======================================================
-          CALCULATION CARD
-      ====================================================== */}
+      {/* CALCULATION CARD */}
+
       <section className="settlement-info">
-
-        <div>
-
-          <span className="info-icon">
-            🧮
-          </span>
-
+        <div className="settlement-info-main">
+          <span className="info-icon">∑</span>
           <div>
-
-            <h4>
-              Winning Calculation
-            </h4>
-
+            <span className="section-kicker">PAYOUT FORMULA</span>
+            <h4>Winning Calculation</h4>
             <p>
-              Total winning =
-              (Kills × Per Kill)
-              + Winner Prize
+              Total winning = (Kills × Per Kill) + Winner Prize
             </p>
-
           </div>
-
         </div>
 
         <div className="formula-box">
-
-          <span>
-            Example
-          </span>
-
+          <span>EXAMPLE PAYOUT</span>
           <strong>
-            5 × {currency(perKill)}
-            {" + "}
-            {currency(winnerPrize)}
+            5 × {currency(perKill)} + {currency(winnerPrize)}
             {" = "}
-            {currency(
-              5 * perKill +
-                winnerPrize
-            )}
+            {currency(5 * perKill + winnerPrize)}
           </strong>
-
         </div>
-
       </section>
 
-      {/* ======================================================
-          SETTLEMENT CARD
-      ====================================================== */}
-      <section className="settlement-info">
+      {/* SETTLEMENT SECURITY CARD */}
 
-        <div>
-
-          <span className="info-icon">
-            🔐
-          </span>
-
+      <section className="settlement-info security-settlement">
+        <div className="settlement-info-main">
+          <span className="info-icon">🔐</span>
           <div>
-
-            <h4>
-              Safe Settlement
-            </h4>
-
+            <span className="section-kicker">PAYMENT PROTECTION</span>
+            <h4>Safe Settlement</h4>
             <p>
-              Results pehle save hote
-              hain. Uske baad winning
-              server-side wallet mein
-              credit hoti hai. Paid
-              result ko dobara credit
-              karne se system block
-              karta hai.
+              Results pehle save hote hain. Uske baad winning server-side
+              wallet mein credit hoti hai. Paid results ko dobara credit
+              karne se system block karta hai.
             </p>
-
           </div>
-
         </div>
 
-        <div className="formula-box">
-
-          <span>
-            Current winner
-          </span>
-
-          <strong>
-            {winnerName}
-          </strong>
-
+        <div className="formula-box current-winner-box">
+          <span>CURRENT WINNER</span>
+          <strong>{winnerName}</strong>
         </div>
-
       </section>
 
+      {/* CONFIRMATION MODAL */}
+
+      {confirmAction && (
+        <div
+          className="tournament-modal-overlay"
+          onClick={() => {
+            if (!settling && !actionId) {
+              setConfirmAction(null);
+            }
+          }}
+        >
+          <div
+            className="tournament-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tournament-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="confirm-modal-top-line" />
+
+            <button
+              type="button"
+              className="confirm-modal-close"
+              onClick={() => setConfirmAction(null)}
+              disabled={settling || Boolean(actionId)}
+              aria-label="Close confirmation"
+            >
+              ×
+            </button>
+
+            <div className="confirm-modal-icon">
+              {confirmAction.type === "settle" ? "₹" : "!"}
+            </div>
+
+            <span className="section-kicker">
+              CONFIRM ADMIN ACTION
+            </span>
+
+            <h3 id="tournament-confirm-title">
+              {confirmAction.title}
+            </h3>
+
+            <p>{confirmAction.description}</p>
+
+            {confirmAction.type === "settle" && (
+              <div className="confirm-amount">
+                <span>PREVIEW TOTAL PAYOUT</span>
+                <strong>{currency(previewTotal)}</strong>
+              </div>
+            )}
+
+            <div className="confirm-modal-actions">
+              <button
+                type="button"
+                className="confirm-cancel-btn"
+                onClick={() => setConfirmAction(null)}
+                disabled={settling || Boolean(actionId)}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="confirm-danger-btn"
+                onClick={confirmPendingAction}
+                disabled={settling || Boolean(actionId)}
+              >
+                {settling
+                  ? "Processing..."
+                  : confirmAction.type === "settle"
+                  ? "Confirm Credit"
+                  : "Yes, Delete Player"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
